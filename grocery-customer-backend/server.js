@@ -63,6 +63,11 @@ app.use("/api/profile", require("./src/routes/authRoutes"))   // /api/profile al
 // /api/search?q= shortcut (frontend SearchResults calls /search?q=)
 app.get("/api/search", searchProducts)
 
+const subscriptionRoutes = require("./src/routes/subscriptionRoutes")
+const startSubscriptionCron = require("./src/jobs/subscriptionCron")
+app.use("/api/subscription", subscriptionRoutes)
+startSubscriptionCron()
+
 // 404
 app.use((req, res) => {
   res.status(404).json({ success: false, message: "Route Not Found" })
