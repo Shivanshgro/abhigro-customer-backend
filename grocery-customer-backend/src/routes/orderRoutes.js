@@ -4,9 +4,13 @@ const auth = require("../middleware/authMiddleware")
 const createOrder = require("../controllers/order/createOrder")
 const getOrders = require("../controllers/order/getOrders")
 const trackOrder = require("../controllers/order/trackOrder")
+const createPayment = require("../controllers/order/createPayment")
+const verifyPayment = require("../controllers/order/verifyPayment")
 
+router.post("/create-payment", auth, createPayment)
+router.post("/verify-payment", auth, verifyPayment)
 router.post("/", auth, createOrder)
-router.get("/", auth, getOrders)          // was /history/:user_id
-router.get("/:id", auth, trackOrder)      // was /track/:order_id
+router.get("/", auth, getOrders)
+router.get("/:id", auth, trackOrder)
 
 module.exports = router

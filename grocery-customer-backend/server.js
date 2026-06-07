@@ -25,6 +25,19 @@ const searchProducts = require("./src/controllers/product/searchProducts")
 const orderSocket = require("./src/socket/orderSocket")
 
 const app = express()
+
+// CORS — must be very first middleware
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", req.headers.origin || "*")
+  res.header("Access-Control-Allow-Credentials", "true")
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,PATCH,OPTIONS")
+  res.header("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With")
+  if (req.method === "OPTIONS") return res.sendStatus(200)
+  next()
+})
+
+app.use(cors({ origin: "*", credentials: true }))
+
 const server = http.createServer(app)
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST", "PUT", "DELETE"] }
@@ -33,15 +46,14 @@ const io = new Server(server, {
 orderSocket(io)
 
 // MIDDLEWARE
-app.use(cors())
-app.use(helmet())
+app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }))
 app.use(compression())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(apiLimiter)
 
 // HEALTH
-app.get("/", (req, res) => res.json({ success: true, message: "FreshKart Backend Running 🚀" }))
+app.get("/", (req, res) => res.json({ success: true, message: "AbhiGro Backend Running 🚀" }))
 app.get("/health", (req, res) => res.json({ success: true, database: "Connected", server: "Running" }))
 
 // ROUTES
@@ -54,13 +66,10 @@ app.use("/api/address", addressRoutes)
 app.use("/api/payment", paymentRoutes)
 app.use("/api/notifications", notificationRoutes)
 app.use("/api/coupons", couponRoutes)
-app.use("/api/delivery", deliveryRoutes)
-app.use("/api/delivery-slots", deliveryRoutes)  // FIX: frontend calls /api/delivery-slots
+app.use("/api/delivery-slots", deliveryRoutes)
 app.use("/api/admin", adminRoutes)
 app.use("/api/upload", uploadRoutes)
-app.use("/api/profile", require("./src/routes/authRoutes"))   // /api/profile aliases auth profile routes
-
-// /api/search?q= shortcut (frontend SearchResults calls /search?q=)
+// NOTE: profile endpoints are served at /api/auth/profile — no duplicate mount needed
 app.get("/api/search", searchProducts)
 
 const subscriptionRoutes = require("./src/routes/subscriptionRoutes")
@@ -81,5 +90,5 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000
 server.listen(PORT, () => {
-  console.log(`FreshKart Backend running on port ${PORT}`)
+  console.log(`AbhiGro Backend running on port ${PORT}`)
 })

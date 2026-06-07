@@ -1,28 +1,10 @@
-const express=
-require("express")
+const express = require("express")
+const router = express.Router()
+const auth = require("../middleware/auth")
+const paymentInit = require("../controllers/payment/paymentInit")
+const paymentVerify = require("../controllers/payment/paymentVerify")
 
-const router=
-express.Router()
+router.post("/init", auth, paymentInit)
+router.post("/verify", auth, paymentVerify)
 
-const paymentInit=
-require(
-"../controllers/payment/paymentInit"
-)
-
-const paymentVerify=
-require(
-"../controllers/payment/paymentVerify"
-)
-
-router.post(
-"/init",
-paymentInit
-)
-
-router.post(
-"/verify",
-paymentVerify
-)
-
-module.exports=
-router
+module.exports = router

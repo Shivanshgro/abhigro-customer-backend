@@ -2,9 +2,10 @@ const pool = require("../../config/db")
 
 const createOrder = async (req, res) => {
   try {
-    const { addressId, address_id, deliverySlot, paymentMethod } = req.body
+    const { addressId, address_id, deliverySlot, delivery_slot, paymentMethod } = req.body
     const user_id = req.user.id
     const addr_id = addressId || address_id
+    const slot = deliverySlot || delivery_slot || null
 
     // Get cart items with product prices
     const cart = await pool.query(
@@ -25,10 +26,10 @@ const createOrder = async (req, res) => {
 
     // Create the order
     const order = await pool.query(
-      `INSERT INTO orders(user_id, address_id, total_amount, payment_method, status)
-       VALUES($1, $2, $3, $4, 'Confirmed')
+      `INSERT INTO orders(user_id, address_id, total_amount, payment_method, delivery_slot, status)
+       VALUES($1, $2, $3, $4, $5, 'Confirmed')
        RETURNING *`,
-      [user_id, addr_id, total, paymentMethod || "COD"]
+      [user_id, addr_id, total, paymentMethod || "COD", slot]
     )
 
     // Clear cart — delete cart_items FIRST (child), then cart rows (parent)

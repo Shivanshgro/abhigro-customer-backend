@@ -1,10 +1,4 @@
-const Razorpay = require("razorpay")
 const pool = require("../../config/db")
-
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-})
 
 const placeDailyOrder = async (req, res) => {
   try {
@@ -47,6 +41,13 @@ const placeDailyOrder = async (req, res) => {
       [user_id, address.rows[0].id, total, sub.rows[0].id]
     )
 
+    // Lazy load Razorpay
+    const Razorpay = require("razorpay")
+    const razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    })
+
     const rzpOrder = await razorpay.orders.create({
       amount: Math.round(total * 100),
       currency: "INR",
@@ -55,6 +56,7 @@ const placeDailyOrder = async (req, res) => {
 
     res.json({ orderId: order.rows[0].id, amount: total, razorpayOrderId: rzpOrder.id, products: products.rows })
   } catch (error) {
+    console.log(error)
     res.status(500).json({ message: error.message })
   }
 }

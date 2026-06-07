@@ -1,10 +1,11 @@
 const express = require("express")
 const router = express.Router()
+const auth = require("../middleware/auth")
 const applyCoupon = require("../controllers/coupon/applyCoupon")
 const pool = require("../config/db")
 
-// GET all active coupons
-router.get("/", async (req, res) => {
+// GET all active coupons — auth required so codes aren't publicly exposed
+router.get("/", auth, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, code, description, discount_amount AS discount, discount_percent, min_order_amount AS "minOrder"
@@ -16,6 +17,6 @@ router.get("/", async (req, res) => {
   }
 })
 
-router.post("/apply", applyCoupon)
+router.post("/apply", auth, applyCoupon)
 
 module.exports = router
