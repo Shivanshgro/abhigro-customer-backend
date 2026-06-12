@@ -14,14 +14,14 @@ jobs:
         with:
           node-version: '18'
 
-      - working-directory: grocery-customer-backend
+      - working-directory: grocery-customer-backend/grocery-customer-backend
         run: npm install
 
-      - working-directory: grocery-customer-backend
+      - working-directory: grocery-customer-backend/grocery-customer-backend
         run: npm run build --if-present
 
       - uses: azure/webapps-deploy@v2
         with:
           app-name: 'abhigro-customer-backend'
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ./grocery-customer-backend
+          package: ./grocery-customer-backend/grocery-customer-backend
