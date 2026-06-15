@@ -20,6 +20,8 @@ const notificationRoutes = require("./src/routes/notificationRoutes")
 const couponRoutes = require("./src/routes/couponRoutes")
 const deliveryRoutes = require("./src/routes/deliveryRoutes")
 const adminRoutes = require("./src/routes/adminRoutes")
+const serviceRoutes = require("./src/routes/serviceRoutes")
+const supplierRoutes = require("./src/routes/supplierRoutes")
 const uploadRoutes = require("./src/routes/uploadRoutes")
 const searchProducts = require("./src/controllers/product/searchProducts")
 const orderSocket = require("./src/socket/orderSocket")
@@ -68,6 +70,8 @@ app.use("/api/notifications", notificationRoutes)
 app.use("/api/coupons", couponRoutes)
 app.use("/api/delivery-slots", deliveryRoutes)
 app.use("/api/admin", adminRoutes)
+app.use("/api/service", serviceRoutes)
+app.use("/api/supplier", supplierRoutes)
 app.use("/api/upload", uploadRoutes)
 // NOTE: profile endpoints are served at /api/auth/profile — no duplicate mount needed
 app.get("/api/search", searchProducts)
@@ -92,3 +96,5 @@ const PORT = process.env.PORT || 5000
 server.listen(PORT, () => {
   console.log(`AbhiGro Backend running on port ${PORT}`)
 })
+// Start hourly stock sync job
+require("./src/jobs/stockSyncJob")
