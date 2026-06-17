@@ -4,8 +4,10 @@ const getOrders = async (req, res) => {
   try {
     const user_id = req.user.id
 
+    // Only customer-relevant fields — vendor assignment details are NOT exposed
     const orders = await pool.query(
-      `SELECT * FROM orders WHERE user_id=$1 ORDER BY created_at DESC`,
+      `SELECT id, total_amount, payment_method, delivery_slot, status, created_at
+       FROM orders WHERE user_id=$1 ORDER BY created_at DESC`,
       [user_id]
     )
 

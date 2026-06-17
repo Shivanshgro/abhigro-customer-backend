@@ -1,4 +1,5 @@
 const pool = require("../../config/db")
+const { autoAssignOrder } = require("../vendor/autoAssignService")
 
 const createOrder = async (req, res) => {
   try {
@@ -7,9 +8,8 @@ const createOrder = async (req, res) => {
     const addr_id = addressId || address_id
     const slot = deliverySlot || delivery_slot || null
 
-    // Get cart items with product prices
     const cart = await pool.query(
-      `SELECT products.price, cart.quantity, cart.id AS cart_row_id
+      `SELECT products.id AS product_id, products.price, cart.quantity
        FROM cart
        JOIN products ON products.id = cart.product_id
        WHERE cart.user_id = $1`,
@@ -20,37 +20,45 @@ const createOrder = async (req, res) => {
       return res.status(400).json({ message: "Cart is empty" })
     }
 
-    // Calculate total
     let total = 0
     cart.rows.forEach(item => { total += item.price * item.quantity })
 
-    // Create the order
+    // Delivery pincode from address
+    let pincode = null
+    try {
+      const addr = await pool.query(`SELECT pincode FROM addresses WHERE id=$1`, [addr_id])
+      pincode = addr.rows[0]?.pincode || null
+    } catch (e) { /* ignore */ }
+
+    // Create order
     const order = await pool.query(
-      `INSERT INTO orders(user_id, address_id, total_amount, payment_method, delivery_slot, status)
-       VALUES($1, $2, $3, $4, $5, 'Confirmed')
+      `INSERT INTO orders(user_id, address_id, total_amount, payment_method, delivery_slot, pincode, status, assignment_status)
+       VALUES($1,$2,$3,$4,$5,$6,'Confirmed','pending')
        RETURNING *`,
-      [user_id, addr_id, total, paymentMethod || "COD", slot]
+      [user_id, addr_id, total, paymentMethod || "COD", slot, pincode]
     )
+    const orderId = order.rows[0].id
 
-    // Clear cart — delete cart_items FIRST (child), then cart rows (parent)
-    const cartIds = cart.rows.map(r => r.cart_row_id)
-
-    if (cartIds.length > 0) {
-      // If using cart_items table (separate child table)
+    // Save order items (needed for stock matching)
+    const items = cart.rows.map(r => ({ product_id: r.product_id, quantity: r.quantity }))
+    for (const it of cart.rows) {
       await pool.query(
-        `DELETE FROM cart_items WHERE cart_id IN (
-           SELECT id FROM cart WHERE user_id = $1
-         )`,
-        [user_id]
-      ).catch(() => {
-        // cart_items table may not exist in this schema — ignore
-      })
-
-      // Now safe to delete cart rows
-      await pool.query(`DELETE FROM cart WHERE user_id = $1`, [user_id])
+        `INSERT INTO order_items (order_id, product_id, quantity, price) VALUES ($1,$2,$3,$4)`,
+        [orderId, it.product_id, it.quantity, it.price])
     }
 
-    res.json({ success: true, ...order.rows[0] })
+    // Clear cart
+    await pool.query(`DELETE FROM cart WHERE user_id = $1`, [user_id])
+
+    // Auto-assign to nearest vendor that has ALL items in stock
+    let assignment = { assigned: false }
+    try {
+      assignment = await autoAssignOrder(orderId, pincode, items)
+    } catch (e) {
+      console.log("Auto-assign error:", e.message)
+    }
+
+    res.json({ success: true, ...order.rows[0], assigned: assignment.assigned })
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: error.message })
