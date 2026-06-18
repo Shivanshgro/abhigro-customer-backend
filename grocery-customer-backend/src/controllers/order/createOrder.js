@@ -1,4 +1,4 @@
-const pool = require("../../config/db")
+﻿const pool = require("../../config/db")
 const { autoAssignOrder } = require("../vendor/autoAssignService")
 
 const createOrder = async (req, res) => {
@@ -23,23 +23,30 @@ const createOrder = async (req, res) => {
     let total = 0
     cart.rows.forEach(item => { total += item.price * item.quantity })
 
-    // Delivery pincode from address
     let pincode = null
+    let finalAddrId = addr_id
     try {
-      const addr = await pool.query(`SELECT pincode FROM addresses WHERE id=$1`, [addr_id])
-      pincode = addr.rows[0]?.pincode || null
-    } catch (e) { /* ignore */ }
+      let addr
+      if (finalAddrId) {
+        addr = await pool.query(`SELECT id, pincode FROM addresses WHERE id=$1`, [finalAddrId])
+      }
+      if (!addr || addr.rows.length === 0) {
+        addr = await pool.query(`SELECT id, pincode FROM addresses WHERE user_id=$1 ORDER BY id DESC LIMIT 1`, [user_id])
+      }
+      if (addr.rows.length > 0) {
+        finalAddrId = addr.rows[0].id
+        pincode = addr.rows[0].pincode || null
+      }
+    } catch (e) { console.log("pincode lookup error:", e.message) }
 
-    // Create order
     const order = await pool.query(
       `INSERT INTO orders(user_id, address_id, total_amount, payment_method, delivery_slot, pincode, status, assignment_status)
        VALUES($1,$2,$3,$4,$5,$6,'Confirmed','pending')
        RETURNING *`,
-      [user_id, addr_id, total, paymentMethod || "COD", slot, pincode]
+      [user_id, finalAddrId, total, paymentMethod || "COD", slot, pincode]
     )
     const orderId = order.rows[0].id
 
-    // Save order items (needed for stock matching)
     const items = cart.rows.map(r => ({ product_id: r.product_id, quantity: r.quantity }))
     for (const it of cart.rows) {
       await pool.query(
@@ -47,10 +54,8 @@ const createOrder = async (req, res) => {
         [orderId, it.product_id, it.quantity, it.price])
     }
 
-    // Clear cart
     await pool.query(`DELETE FROM cart WHERE user_id = $1`, [user_id])
 
-    // Auto-assign to nearest vendor that has ALL items in stock
     let assignment = { assigned: false }
     try {
       assignment = await autoAssignOrder(orderId, pincode, items)
