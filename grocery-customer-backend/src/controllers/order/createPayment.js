@@ -45,8 +45,8 @@ const createOrderPayment = async (req, res) => {
     } catch (e) { console.log("pincode lookup error:", e.message) }
 
     const order = await pool.query(
-      `INSERT INTO orders(user_id, address_id, total_amount, status, payment_method, delivery_slot, pincode, assignment_status)
-       VALUES($1,$2,$3,'Pending','Razorpay',$4,$5,'pending') RETURNING id`,
+      `INSERT INTO orders(user_id, address_id, total_amount, status, payment_method, delivery_slot, pincode, assignment_status, payment_status)
+       VALUES($1,$2,$3,'Pending','Razorpay',$4,$5,'pending','Pending') RETURNING id`,
       [user_id, finalAddrId, total, slot, pincode]
     )
     const orderId = order.rows[0].id

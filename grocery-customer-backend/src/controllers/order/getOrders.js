@@ -6,7 +6,8 @@ const getOrders = async (req, res) => {
 
     // Only customer-relevant fields — vendor assignment details are NOT exposed
     const orders = await pool.query(
-      `SELECT id, total_amount, payment_method, delivery_slot, status, created_at
+      `SELECT id, total_amount, payment_method, payment_status, delivery_slot, status,
+              packed_photo, delivery_photo, created_at
        FROM orders WHERE user_id=$1 ORDER BY created_at DESC`,
       [user_id]
     )

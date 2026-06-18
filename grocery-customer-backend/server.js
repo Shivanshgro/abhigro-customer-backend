@@ -50,6 +50,14 @@ const io = new Server(server, {
 
 orderSocket(io)
 
+// Make io available to controllers (delivery/vendor live updates)
+const { setIO } = require("./src/socket/emit")
+setIO(io)
+
+// Ensure new delivery/payment columns exist (idempotent, non-destructive)
+const ensureSchema = require("./src/config/ensureSchema")
+ensureSchema()
+
 // MIDDLEWARE
 app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }))
 app.use(compression())

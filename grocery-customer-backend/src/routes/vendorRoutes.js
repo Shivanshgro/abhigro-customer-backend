@@ -1,6 +1,7 @@
 const express = require("express")
 const router = express.Router()
 const auth = require("../middleware/authMiddleware")
+const upload = require("../middleware/upload")
 const v = require("../controllers/vendor/vendorPanelController")
 
 // Vendor daily duty: manage stock & status (NO manual order accept/reject)
@@ -10,5 +11,6 @@ router.post("/inventory/bulk",  auth, v.bulkUpdateInventory)
 router.post("/status",          auth, v.setStatus)
 router.get("/orders",           auth, v.myOrders)
 router.post("/orders/:id/fulfilled", auth, v.markFulfilled)
+router.post("/orders/:id/packed-photo", auth, upload.any(), v.uploadPackedPhoto)
 
 module.exports = router

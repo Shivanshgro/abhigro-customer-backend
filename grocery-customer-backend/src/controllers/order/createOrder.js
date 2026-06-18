@@ -39,11 +39,14 @@ const createOrder = async (req, res) => {
       }
     } catch (e) { console.log("pincode lookup error:", e.message) }
 
+    const isCOD = !paymentMethod || /cod/i.test(paymentMethod)
+    const payStatus = isCOD ? "Pending" : "Paid"
+
     const order = await pool.query(
-      `INSERT INTO orders(user_id, address_id, total_amount, payment_method, delivery_slot, pincode, status, assignment_status)
-       VALUES($1,$2,$3,$4,$5,$6,'Confirmed','pending')
+      `INSERT INTO orders(user_id, address_id, total_amount, payment_method, delivery_slot, pincode, status, assignment_status, payment_status)
+       VALUES($1,$2,$3,$4,$5,$6,'Confirmed','pending',$7)
        RETURNING *`,
-      [user_id, finalAddrId, total, paymentMethod || "COD", slot, pincode]
+      [user_id, finalAddrId, total, paymentMethod || "COD", slot, pincode, payStatus]
     )
     const orderId = order.rows[0].id
 

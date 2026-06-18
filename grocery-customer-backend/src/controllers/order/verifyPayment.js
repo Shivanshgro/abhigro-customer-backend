@@ -17,9 +17,9 @@ const verifyOrderPayment = async (req, res) => {
       return res.status(400).json({ message: "Invalid payment signature" })
     }
 
-    // Confirm order
+    // Confirm order + mark paid
     await pool.query(
-      `UPDATE orders SET status='Confirmed' WHERE id=$1 AND user_id=$2`,
+      `UPDATE orders SET status='Confirmed', payment_status='Paid' WHERE id=$1 AND user_id=$2`,
       [orderId, user_id]
     )
 

@@ -1,5 +1,7 @@
 const pool = require("../../config/db")
 const { bookDelivery, PROVIDER } = require("../../services/delivery/deliveryProvider")
+const cloudinary = require("../../config/cloudinary")
+const { notifyDeliveryBoys } = require("../../services/notificationService")
 
 async function getMyShop(userId) {
   const r = await pool.query(`SELECT * FROM shops WHERE owner_user_id=$1 LIMIT 1`, [userId])
@@ -105,6 +107,19 @@ exports.markFulfilled = async (req, res) => {
       `UPDATE orders SET status='Packed' WHERE id=$1 AND assigned_shop_id=$2`,
       [id, shop.id])
 
+    // Notify available delivery boys that a packed order is ready for pickup.
+    // Non-blocking: never let a notification failure break the packed flow.
+    try {
+      const o = await pool.query(`SELECT id, pincode, total_amount FROM orders WHERE id=$1`, [id])
+      if (o.rows[0]) {
+        await notifyDeliveryBoys(
+          o.rows[0],
+          "Order ready for pickup",
+          `Order #${id} is packed and ready for pickup at ${shop.shop_name || "the shop"}.`
+        )
+      }
+    } catch (e) { console.log("notify delivery boys error:", e.message) }
+
     // Auto-book third-party delivery: pickup = vendor shop, drop = customer address
     try {
       const ord = await pool.query(
@@ -127,4 +142,31 @@ exports.markFulfilled = async (req, res) => {
       return res.json({ success: true, delivery: { status: "failed", error: e.message } })
     }
   } catch (e) { res.status(500).json({ message: e.message }) }
+}
+
+// POST /api/vendor/orders/:id/packed-photo — vendor uploads proof photo of the
+// packed order (multipart field name: "photo" or "image"). Stored on the order.
+exports.uploadPackedPhoto = async (req, res) => {
+  try {
+    const shop = await getMyShop(req.user.id)
+    if (!shop) return res.status(403).json({ message: "No shop linked" })
+    const { id } = req.params
+    const file = req.file || (req.files && req.files[0])
+    if (!file) return res.status(400).json({ message: "No photo uploaded" })
+
+    // Make sure this order really belongs to this vendor
+    const own = await pool.query(
+      `SELECT id FROM orders WHERE id=$1 AND assigned_shop_id=$2`, [id, shop.id])
+    if (own.rows.length === 0) return res.status(404).json({ message: "Order not found for this shop" })
+
+    const base64 = file.buffer.toString("base64")
+    const dataURI = `data:${file.mimetype};base64,${base64}`
+    const result = await cloudinary.uploader.upload(dataURI, { folder: "grocery/packed" })
+
+    await pool.query(`UPDATE orders SET packed_photo=$1 WHERE id=$2`, [result.secure_url, id])
+    res.json({ success: true, packed_photo: result.secure_url })
+  } catch (e) {
+    console.log("uploadPackedPhoto error:", e.message)
+    res.status(500).json({ message: e.message })
+  }
 }

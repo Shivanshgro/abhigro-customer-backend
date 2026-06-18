@@ -5,7 +5,9 @@ const trackOrder = async (req, res) => {
     const { id } = req.params
 
     const order = await pool.query(
-      `SELECT id, status, payment_method AS "paymentStatus", total_amount AS total, created_at AS "createdAt"
+      `SELECT id, status, payment_method, payment_status AS "paymentStatus",
+              total_amount AS total, packed_photo AS "packedPhoto",
+              delivery_photo AS "deliveryPhoto", created_at AS "createdAt"
        FROM orders WHERE id=$1`,
       [id]
     )
