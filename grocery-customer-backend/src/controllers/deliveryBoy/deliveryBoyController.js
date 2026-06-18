@@ -3,23 +3,26 @@
 exports.availableOrders = async (req, res) => {
   try {
     const orders = await pool.query(
-      `SELECT o.id, o.total_amount, o.pincode, o.status, o.payment_method, o.payment_status,
+      `SELECT o.id, o.total_amount, o.pincode, o.status, o.payment_method,
               s.shop_name, s.address AS shop_address, s.phone AS shop_phone,
               a.address_line AS customer_address, a.phone AS customer_phone
        FROM orders o
        LEFT JOIN shops s ON s.id = o.assigned_shop_id
        LEFT JOIN addresses a ON a.id = o.address_id
-       WHERE o.status = '"'"'Packed'"'"' AND o.delivery_boy_id IS NULL
+       WHERE o.status = '"'"'Packed'"'"' AND (o.delivery_boy_id IS NULL)
        ORDER BY o.id DESC`
     )
     res.json({ success: true, orders: orders.rows })
-  } catch (e) { res.status(500).json({ message: e.message }) }
+  } catch (e) {
+    console.log("availableOrders error:", e.message)
+    res.status(500).json({ message: e.message })
+  }
 }
 
 exports.myDeliveries = async (req, res) => {
   try {
     const orders = await pool.query(
-      `SELECT o.id, o.total_amount, o.pincode, o.status, o.payment_method, o.payment_status,
+      `SELECT o.id, o.total_amount, o.pincode, o.status, o.payment_method,
               s.shop_name, s.address AS shop_address, s.phone AS shop_phone,
               a.address_line AS customer_address, a.phone AS customer_phone
        FROM orders o
@@ -30,7 +33,10 @@ exports.myDeliveries = async (req, res) => {
       [req.user.id]
     )
     res.json({ success: true, orders: orders.rows })
-  } catch (e) { res.status(500).json({ message: e.message }) }
+  } catch (e) {
+    console.log("myDeliveries error:", e.message)
+    res.status(500).json({ message: e.message })
+  }
 }
 
 exports.goToPickup = async (req, res) => {
@@ -58,12 +64,7 @@ exports.markPickedUp = async (req, res) => {
 exports.markDelivered = async (req, res) => {
   try {
     const { id } = req.params
-    await pool.query(
-      `UPDATE orders SET status = '"'"'Completed'"'"',
-       payment_status = CASE WHEN payment_method = '"'"'COD'"'"' THEN '"'"'paid'"'"' ELSE payment_status END
-       WHERE id = $1 AND delivery_boy_id = $2`,
-      [id, req.user.id]
-    )
+    await pool.query(`UPDATE orders SET status = '"'"'Completed'"'"' WHERE id = $1 AND delivery_boy_id = $2`, [id, req.user.id])
     res.json({ success: true, message: "Delivered. Order completed!" })
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
