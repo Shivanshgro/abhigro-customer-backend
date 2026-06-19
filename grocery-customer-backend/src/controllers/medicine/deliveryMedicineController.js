@@ -103,15 +103,16 @@ exports.delivered = async (req, res) => {
     if (ord.rows.length === 0) return res.status(404).json({ message: "Order not assigned to you" })
     const o = ord.rows[0]
 
-    // proof photo (inline or already uploaded)
+    // proof photo is OPTIONAL for medicine — upload if provided, otherwise skip
     let proof = o.delivery_photo_url
     const file = req.file || (req.files && req.files[0])
     if (file) {
-      const b64 = file.buffer.toString("base64")
-      const up = await cloudinary.uploader.upload(`data:${file.mimetype};base64,${b64}`, { folder: "abhigro/medicine-delivery" })
-      proof = up.secure_url
+      try {
+        const b64 = file.buffer.toString("base64")
+        const up = await cloudinary.uploader.upload(`data:${file.mimetype};base64,${b64}`, { folder: "abhigro/medicine-delivery" })
+        proof = up.secure_url
+      } catch (e) { console.log("medicine proof upload skipped:", e.message) }
     }
-    if (!proof) return res.status(400).json({ message: "Delivery proof photo is required" })
 
     let payStatus = o.payment_status
     const body = req.body || {}
