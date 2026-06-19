@@ -11,6 +11,11 @@ const pool         = require("../config/db")
 // Dashboard
 router.get("/dashboard", auth, admin, dashboardStats)
 
+// ── Orders (for Admin dashboard) ──────────────────────────────────
+const adminOrders = require("../controllers/admin/adminOrders")
+router.get("/orders", auth, admin, adminOrders.listOrders)
+router.get("/orders/:id", auth, admin, adminOrders.getOrder)
+
 // ── Product Management ────────────────────────────────────────────
 // Get all products (including inactive)
 router.get("/products", auth, admin, async (req, res) => {

@@ -26,4 +26,11 @@ function emitDeliveryAvailable(payload = {}) {
   } catch (e) { /* ignore */ }
 }
 
-module.exports = { setIO, getIO, emitOrderUpdate, emitDeliveryAvailable }
+// Broadcast a brand-new order so the Admin dashboard updates without refresh
+function emitNewOrder(payload = {}) {
+  try {
+    if (_io) _io.emit("newOrder", payload)
+  } catch (e) { /* ignore */ }
+}
+
+module.exports = { setIO, getIO, emitOrderUpdate, emitDeliveryAvailable, emitNewOrder }

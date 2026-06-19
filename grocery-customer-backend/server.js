@@ -58,6 +58,10 @@ setIO(io)
 const ensureSchema = require("./src/config/ensureSchema")
 ensureSchema()
 
+// Ensure medicine module tables exist (idempotent, separate from grocery)
+const ensureMedicineSchema = require("./src/config/medicineSchema")
+ensureMedicineSchema()
+
 // MIDDLEWARE
 app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }))
 app.use(compression())
@@ -84,7 +88,12 @@ app.use("/api/admin", adminRoutes)
 app.use("/api/service", serviceRoutes)
 app.use("/api/group-buy", groupBuyRoutes)
 app.use("/api/vendor", vendorRoutes)
+// ── Medicine module (separate from grocery) — specific mount first ─
+app.use("/api/delivery/medicine-orders", require("./src/routes/medicineDeliveryRoutes"))
 app.use("/api/delivery", deliveryBoyRoutes)
+app.use("/api/medicine", require("./src/routes/medicineRoutes"))
+app.use("/api/pharmacy", require("./src/routes/pharmacyRoutes"))
+app.use("/api/admin", require("./src/routes/adminMedicineRoutes"))
 app.use("/api/supplier", supplierRoutes)
 app.use("/api/upload", uploadRoutes)
 // NOTE: profile endpoints are served at /api/auth/profile — no duplicate mount needed
