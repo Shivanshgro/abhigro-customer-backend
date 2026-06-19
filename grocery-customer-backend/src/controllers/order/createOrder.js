@@ -66,10 +66,9 @@ const createOrder = async (req, res) => {
       console.log("Auto-assign error:", e.message)
     }
 
-    // Notify admin (live dashboard + WhatsApp) — non-blocking
+    // Notify admin dashboard live (socket only — free, no WhatsApp)
     try {
       const { emitNewOrder } = require("../../socket/emit")
-      const { sendNewOrderWhatsApp } = require("../../services/whatsappService")
       const info = await pool.query(
         `SELECT u.name AS customer_name, u.phone AS customer_phone,
                 a.address_line AS address, s.shop_name AS shop_name
@@ -79,15 +78,13 @@ const createOrder = async (req, res) => {
          LEFT JOIN shops s ON s.id=o.assigned_shop_id
          WHERE o.id=$1`, [orderId])
       const d = info.rows[0] || {}
-      const payload = {
+      emitNewOrder({
         id: orderId, orderNumber: orderId,
         customerName: d.customer_name, customerPhone: d.customer_phone,
         address: d.address, pincode, totalAmount: total,
         paymentMethod: paymentMethod || "COD", paymentStatus: payStatus,
         shopName: d.shop_name, status: "Confirmed",
-      }
-      emitNewOrder(payload)
-      sendNewOrderWhatsApp(payload) // fire-and-forget
+      })
     } catch (e) { console.log("admin notify error:", e.message) }
 
     res.json({ success: true, ...order.rows[0], assigned: assignment.assigned })
