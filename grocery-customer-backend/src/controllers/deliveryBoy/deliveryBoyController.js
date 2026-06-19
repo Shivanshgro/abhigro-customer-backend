@@ -86,7 +86,8 @@ exports.goToPickup = async (req, res) => {
 exports.confirmPickup = async (req, res) => {
   try {
     const { id } = req.params
-    const orderNumber = req.body.orderNumber ?? req.body.order_number ?? req.body.code
+    const body = req.body || {}
+    const orderNumber = body.orderNumber ?? body.order_number ?? body.code ?? req.query.orderNumber
 
     if (orderNumber === undefined || orderNumber === null || `${orderNumber}`.trim() === "")
       return res.status(400).json({ message: "Order number is required to confirm pickup" })
@@ -114,7 +115,8 @@ exports.confirmPickup = async (req, res) => {
 exports.markPickedUp = async (req, res) => {
   try {
     const { id } = req.params
-    const orderNumber = req.body.orderNumber ?? req.body.order_number
+    const body = req.body || {}
+    const orderNumber = body.orderNumber ?? body.order_number
     if (orderNumber !== undefined && `${orderNumber}`.trim() !== `${id}`.trim())
       return res.status(400).json({ message: "Order number does not match this order" })
 
@@ -208,7 +210,8 @@ exports.markDelivered = async (req, res) => {
 
     // 2) Payment resolution
     let paymentStatus = o.payment_status
-    const cashCollected = req.body.cashCollected === true || req.body.cashCollected === "true" || req.body.collected === "true"
+    const body = req.body || {}
+    const cashCollected = body.cashCollected === true || body.cashCollected === "true" || body.collected === "true"
     if (isCOD(o.payment_method)) {
       if (paymentStatus !== "Collected" && !cashCollected)
         return res.status(400).json({ message: "COD order: collect cash and pass cashCollected=true (or call /collect first)." })
