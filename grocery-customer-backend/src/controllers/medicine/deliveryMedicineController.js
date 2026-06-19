@@ -125,11 +125,13 @@ exports.delivered = async (req, res) => {
       payStatus = "paid"
     }
 
+    const codAmount = payStatus === "collected"
+      ? (o.cod_collected_amount ?? o.total_amount)
+      : (o.cod_collected_amount ?? null)
+
     await pool.query(
-      `UPDATE medicine_orders SET delivery_photo_url=$1, payment_status=$2,
-         cod_collected_amount = CASE WHEN $2='collected' THEN COALESCE(cod_collected_amount,total_amount) ELSE cod_collected_amount END
-       WHERE id=$3`,
-      [proof, payStatus, o.id])
+      `UPDATE medicine_orders SET delivery_photo_url=$1, payment_status=$2, cod_collected_amount=$3 WHERE id=$4`,
+      [proof, payStatus, codAmount, o.id])
     await setStatus(o.id, "delivered", "delivery", req.user.id)
     await setStatus(o.id, "completed", "delivery", req.user.id, "Delivery completed")
     res.json({ success: true, order_status: "completed", payment_status: payStatus, delivery_photo_url: proof })
