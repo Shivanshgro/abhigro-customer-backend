@@ -34,12 +34,11 @@ const mobileLogin = async (req, res) => {
     )
 
     if (user.rows.length === 0) {
-      // Auto-register new user with mobile
-      const newUser = await pool.query(
-        `INSERT INTO users(name, phone, role) VALUES($1,$2,'customer') RETURNING *`,
-        [`User${mobile.slice(-4)}`, mobile]
-      )
-      user = { rows: [newUser.rows[0]] }
+      // Login must NOT create accounts — unregistered numbers are rejected
+      return res.status(404).json({
+        message: "This mobile number is not registered. Please register first.",
+        notRegistered: true,
+      })
     }
 
     const userData = user.rows[0]
