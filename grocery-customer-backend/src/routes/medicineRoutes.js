@@ -8,6 +8,10 @@ const c = require("../controllers/medicine/customerMedicineController")
 router.get("/products", c.listProducts)
 router.get("/products/:id", c.getProduct)
 
+// Public pharmacy self-registration (pending admin approval)
+const onboard = require("../controllers/medicine/pharmacyOnboardController")
+router.post("/pharmacy/register", onboard.registerPharmacy)
+
 // Prescription upload before placing an order (returns a URL)
 router.post("/prescription/upload", auth, upload.any(), c.uploadPrescriptionFile)
 
