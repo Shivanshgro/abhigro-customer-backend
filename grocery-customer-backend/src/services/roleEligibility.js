@@ -30,7 +30,13 @@ async function checkEligibility(mobile, role) {
   }
   const user = u.rows[0]
 
-  // role match
+  // Customer login is OPEN to any registered account (everyone can shop).
+  // Only vendor / pharmacy / delivery enforce a strict role match below.
+  if (want === "customer") {
+    return { ok: true, user }
+  }
+
+  // role match (partner roles only)
   if (canonical(user.role) !== want) {
     return { ok: false, code: "wrong_role",
       message: `This mobile number is not registered as ${label}. Please register as ${label} first.` }
