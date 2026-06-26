@@ -1,0 +1,20 @@
+const express = require("express")
+const router = express.Router()
+const auth = require("../middleware/auth")
+const createOrder = require("../controllers/subscription/createOrder")
+const verifyPayment = require("../controllers/subscription/verifyPayment")
+const getStatus = require("../controllers/subscription/getStatus")
+const placeDailyOrder = require("../controllers/subscription/placeDailyOrder")
+const confirmDailyOrder = require("../controllers/subscription/confirmDailyOrder")
+const getTodayOrder = require("../controllers/subscription/getTodayOrder")
+const getProducts = require("../controllers/subscription/getProducts")
+
+router.get("/status", auth, getStatus)
+router.post("/create-order", auth, createOrder)
+router.post("/verify-payment", auth, verifyPayment)
+router.get("/products", auth, getProducts)
+router.get("/today-order", auth, getTodayOrder)
+router.post("/place-daily-order", auth, placeDailyOrder)
+router.post("/confirm-daily-order", auth, confirmDailyOrder)
+
+module.exports = router
