@@ -40,6 +40,8 @@ async function ensureBatch2Schema() {
       UPDATE users SET referral_code = UPPER(SUBSTRING(MD5(id::text || phone) FROM 1 FOR 6))
       WHERE referral_code IS NULL`)
 
+    await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS platform_fee NUMERIC DEFAULT 0`)
+
     // ---- Cancellation columns on orders ----
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMP`)
     await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT`)

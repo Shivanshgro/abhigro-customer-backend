@@ -7,7 +7,6 @@ const ROLE_LABEL = {
 
 function normPhone(p) { return String(p || "").replace(/\D/g, "").slice(-10) }
 
-// normalize stored role variants to a canonical role
 function canonical(r) {
   const x = String(r || "customer").toLowerCase()
   if (x === "pharmacist" || x === "pharmacy_vendor") return "pharmacy"
@@ -15,48 +14,70 @@ function canonical(r) {
   return x
 }
 
-// Checks: registered? role matches? approved/active?
+// Eligibility is RECORD-BASED for partner roles: a user is a valid vendor if they
+// OWN a shop (approved), regardless of the volatile users.role column. This fixes
+// the "sometimes logs in, sometimes says not registered" problem, which happened
+// when a partner's role got changed to 'customer' (Option-1 shopping) while they
+// still owned an approved shop.
 // Returns { ok, user?, message?, code? }
 async function checkEligibility(mobile, role) {
   const phone = normPhone(mobile)
   const want = String(role || "customer").toLowerCase()
   const label = ROLE_LABEL[want] || "Customer"
-  if (phone.length !== 10) return { ok: false, message: "Enter a valid 10-digit mobile number" }
+  if (phone.length !== 10) return { ok: false, code: "bad_phone", message: "Enter a valid 10-digit mobile number" }
 
   const u = await pool.query(`SELECT * FROM users WHERE phone=$1`, [phone])
   if (u.rows.length === 0) {
     return { ok: false, code: "not_registered",
-      message: `This mobile number is not registered as ${label}. Please register as ${label} first.` }
+      message: `This mobile number is not registered. Please register first.` }
   }
   const user = u.rows[0]
 
   // Customer login is OPEN to any registered account (everyone can shop).
-  // Only vendor / pharmacy / delivery enforce a strict role match below.
-  if (want === "customer") {
+  if (want === "customer") return { ok: true, user }
+
+  // ---- Partner roles: decide by OWNERSHIP of the partner record, not users.role ----
+  if (want === "vendor") {
+    const s = await pool.query(
+      `SELECT is_active FROM shops WHERE owner_user_id=$1 ORDER BY id DESC LIMIT 1`, [user.id])
+    if (s.rows.length === 0)
+      return { ok: false, code: "not_registered",
+        message: `This mobile number is not registered as a Vendor. Please register as a Vendor first.` }
+    if (!s.rows[0].is_active)
+      return { ok: false, code: "pending",
+        message: `Your vendor account is awaiting admin approval. You'll be able to log in once approved.` }
     return { ok: true, user }
   }
 
-  // role match (partner roles only)
+  if (want === "pharmacy") {
+    const s = await pool.query(
+      `SELECT is_active FROM pharmacies WHERE owner_user_id=$1 ORDER BY id DESC LIMIT 1`, [user.id])
+    if (s.rows.length === 0)
+      return { ok: false, code: "not_registered",
+        message: `This mobile number is not registered as a Pharmacy. Please register as a Pharmacy first.` }
+    if (!s.rows[0].is_active)
+      return { ok: false, code: "pending",
+        message: `Your pharmacy account is awaiting admin approval. You'll be able to log in once approved.` }
+    return { ok: true, user }
+  }
+
+  if (want === "delivery") {
+    const s = await pool.query(
+      `SELECT is_approved FROM delivery_partners WHERE user_id=$1 ORDER BY id DESC LIMIT 1`, [user.id])
+    if (s.rows.length === 0)
+      return { ok: false, code: "not_registered",
+        message: `This mobile number is not registered as a Delivery Partner. Please register as a Delivery Partner first.` }
+    if (!s.rows[0].is_approved)
+      return { ok: false, code: "pending",
+        message: `Your delivery account is awaiting admin approval. You'll be able to log in once approved.` }
+    return { ok: true, user }
+  }
+
+  // admin or unknown role: fall back to role match
   if (canonical(user.role) !== want) {
     return { ok: false, code: "wrong_role",
-      message: `This mobile number is not registered as ${label}. Please register as ${label} first.` }
+      message: `This mobile number is not registered as ${label}.` }
   }
-
-  // approval checks for partner roles
-  if (want === "vendor") {
-    const s = await pool.query(`SELECT is_active FROM shops WHERE owner_user_id=$1 ORDER BY id DESC LIMIT 1`, [user.id])
-    if (s.rows.length === 0) return { ok: false, code: "not_registered", message: `This mobile number is not registered as Vendor. Please register as Vendor first.` }
-    if (!s.rows[0].is_active) return { ok: false, code: "pending", message: "Your vendor account is pending admin approval." }
-  } else if (want === "pharmacy") {
-    const s = await pool.query(`SELECT is_active FROM pharmacies WHERE owner_user_id=$1 ORDER BY id DESC LIMIT 1`, [user.id])
-    if (s.rows.length === 0) return { ok: false, code: "not_registered", message: `This mobile number is not registered as Pharmacy. Please register as Pharmacy first.` }
-    if (!s.rows[0].is_active) return { ok: false, code: "pending", message: "Your pharmacy account is pending admin approval." }
-  } else if (want === "delivery") {
-    const s = await pool.query(`SELECT is_approved FROM delivery_partners WHERE user_id=$1 ORDER BY id DESC LIMIT 1`, [user.id])
-    if (s.rows.length === 0) return { ok: false, code: "not_registered", message: `This mobile number is not registered as Delivery Partner. Please register as Delivery Partner first.` }
-    if (!s.rows[0].is_approved) return { ok: false, code: "pending", message: "Your delivery account is pending admin approval." }
-  }
-
   return { ok: true, user }
 }
 

@@ -81,16 +81,40 @@ exports.setStatus = async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
 
-// GET /api/vendor/orders — orders auto-assigned to this vendor
+// GET /api/vendor/orders — orders auto-assigned to this vendor, FULL detail
+// Returns each order with: itemised products (name, image, unit, qty, unit price,
+// line total), customer name/phone, delivery address + pincode, payment method/status,
+// and order totals — everything the vendor needs to pack and dispatch.
 exports.myOrders = async (req, res) => {
   try {
     const shop = await getMyShop(req.user.id)
     if (!shop) return res.status(403).json({ message: "No shop linked" })
     const orders = await pool.query(
-      `SELECT o.*, 
-        (SELECT json_agg(json_build_object('product_id',oi.product_id,'quantity',oi.quantity))
-         FROM order_items oi WHERE oi.order_id=o.id) AS items
-       FROM orders o WHERE o.assigned_shop_id=$1 ORDER BY o.id DESC`,
+      `SELECT o.id, o.status, o.total_amount, o.delivery_fee,
+              o.payment_method, o.payment_status, o.created_at, o.pincode,
+              o.packed_photo, o.delivery_boy_id,
+              cu.name  AS customer_name,
+              cu.phone AS customer_phone,
+              a.address_line, a.pincode AS address_pincode, a.phone AS address_phone,
+              (SELECT json_agg(json_build_object(
+                  'product_id', oi.product_id,
+                  'name',       p.name,
+                  'image',      p.image,
+                  'unit',       p.unit,
+                  'quantity',   oi.quantity,
+                  'price',      oi.price,
+                  'line_total', (oi.price * oi.quantity),
+                  'cancelled',  COALESCE(oi.cancelled,false)
+                ) ORDER BY p.name)
+               FROM order_items oi
+               JOIN products p ON p.id = oi.product_id
+               WHERE oi.order_id = o.id) AS items,
+              (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id=o.id) AS item_count
+       FROM orders o
+       LEFT JOIN users cu      ON cu.id = o.user_id
+       LEFT JOIN addresses a   ON a.id = o.address_id
+       WHERE o.assigned_shop_id=$1
+       ORDER BY o.id DESC`,
       [shop.id])
     res.json({ success: true, orders: orders.rows })
   } catch (e) { res.status(500).json({ message: e.message }) }
