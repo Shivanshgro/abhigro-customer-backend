@@ -2,7 +2,7 @@ const pool = require("../config/db")
 
 const ROLE_LABEL = {
   customer: "Customer", vendor: "Vendor", pharmacy: "Pharmacy",
-  delivery: "Delivery Partner", admin: "Admin",
+  delivery: "Delivery Partner", restaurant: "Restaurant", admin: "Admin",
 }
 
 function normPhone(p) { return String(p || "").replace(/\D/g, "").slice(-10) }
@@ -70,6 +70,16 @@ async function checkEligibility(mobile, role) {
     if (!s.rows[0].is_approved)
       return { ok: false, code: "pending",
         message: `Your delivery account is awaiting admin approval. You'll be able to log in once approved.` }
+    return { ok: true, user }
+  }
+
+  if (want === "restaurant") {
+    const s = await pool.query(
+      `SELECT is_approved FROM food_restaurants WHERE owner_id=$1 ORDER BY id DESC LIMIT 1`, [user.id])
+    if (s.rows.length === 0)
+      return { ok: false, code: "not_registered",
+        message: `This mobile number is not registered as a Restaurant. Please register as a Restaurant first.` }
+    // Note: restaurant can log in to its panel even while pending, to set up menu.
     return { ok: true, user }
   }
 

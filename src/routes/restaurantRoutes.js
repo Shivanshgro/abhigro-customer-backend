@@ -6,7 +6,7 @@ const { myRestaurant, setOnline } = require("../controllers/restaurant/myRestaur
 const menu = require("../controllers/restaurant/menu")
 const ro = require("../controllers/restaurant/restaurantOrders")
 
-router.post("/register", auth, registerRestaurant)
+router.post("/register", registerRestaurant)
 router.get("/me", auth, myRestaurant)
 router.post("/online", auth, setOnline)
 

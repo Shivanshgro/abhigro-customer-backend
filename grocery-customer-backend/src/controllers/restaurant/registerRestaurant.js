@@ -1,4 +1,4 @@
-﻿const pool = require("../../config/db")
+const pool = require("../../config/db")
 
 function normPhone(p) { return String(p || "").replace(/\D/g, "").slice(-10) }
 
@@ -25,7 +25,8 @@ const registerRestaurant = async (req, res) => {
 
     const dup = await pool.query(`SELECT id, approval_status FROM food_restaurants WHERE owner_id=$1`, [ownerId])
     if (dup.rows.length > 0) {
-      return res.status(409).json({ message: "A restaurant is already registered for this phone number.", restaurant_id: dup.rows[0].id, approval_status: dup.rows[0].approval_status })
+      return res.status(409).json({ message: "A restaurant is already registered for this phone number.",
+        restaurant_id: dup.rows[0].id, approval_status: dup.rows[0].approval_status })
     }
 
     const r = await pool.query(
