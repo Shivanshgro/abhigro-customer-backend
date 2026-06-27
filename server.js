@@ -31,6 +31,7 @@ const orderSocket = require("./src/socket/orderSocket")
 const trackingRoutes = require("./src/routes/trackingRoutes")
 const walletRoutes = require("./src/routes/walletRoutes")
 const assistedFoodRoutes = require("./src/routes/assistedFoodRoutes")
+const webhookRoutes = require("./src/routes/webhookRoutes")
 const restaurantRoutes = require("./src/routes/restaurantRoutes")
 const foodRoutes = require("./src/routes/foodRoutes")
 
@@ -82,6 +83,8 @@ ensurePartnerSchema()
 // MIDDLEWARE
 app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }))
 app.use(compression())
+// Razorpay webhook needs the RAW body for signature verification — mount BEFORE express.json
+app.use("/api/webhook/razorpay", express.raw({ type: "*/*" }), require("./src/controllers/webhook/razorpayWebhook"))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(apiLimiter)

@@ -45,11 +45,13 @@ exports.verifyFoodPayment = async (req, res) => {
     if (r.rows.length === 0) return res.status(404).json({ message: "Order not found" })
 
     const SECRET = process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_SECRET
-    if (SECRET && razorpay_signature) {
-      const expected = crypto.createHmac("sha256", SECRET)
-        .update(`${razorpay_order_id}|${razorpay_payment_id}`).digest("hex")
-      if (expected !== razorpay_signature) return res.status(400).json({ message: "Payment verification failed" })
-    }
+    // Signature verification is MANDATORY.
+    if (!SECRET) return res.status(500).json({ message: "Payment secret not configured" })
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature)
+      return res.status(400).json({ message: "Missing payment verification fields" })
+    const expected = crypto.createHmac("sha256", SECRET)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`).digest("hex")
+    if (expected !== razorpay_signature) return res.status(400).json({ message: "Payment verification failed" })
     const upd = await pool.query(
       `UPDATE assisted_food_orders
        SET customer_food_payment_status='paid', customer_payment_id=$1, status='food_payment_paid'

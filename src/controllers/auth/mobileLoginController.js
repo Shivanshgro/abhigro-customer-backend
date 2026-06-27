@@ -3,7 +3,8 @@ const jwt = require("jsonwebtoken")
 const axios = require("axios")
 const { checkEligibility } = require("../../services/roleEligibility")
 
-const JWT_SECRET = process.env.JWT_SECRET || "grocery_secret"
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET) { console.error("FATAL: JWT_SECRET env variable is not set"); }
 const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY
 
 // POST /api/auth/mobile-login  { mobile, token, role }
