@@ -1,4 +1,4 @@
-require("dotenv").config()
+﻿require("dotenv").config()
 require("./src/config/db")
 
 const express = require("express")
@@ -37,7 +37,7 @@ const foodRoutes = require("./src/routes/foodRoutes")
 
 const app = express()
 
-// CORS — must be very first middleware
+// CORS â€” must be very first middleware
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", req.headers.origin || "*")
   res.header("Access-Control-Allow-Credentials", "true")
@@ -83,14 +83,14 @@ ensurePartnerSchema()
 // MIDDLEWARE
 app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }))
 app.use(compression())
-// Razorpay webhook needs the RAW body for signature verification — mount BEFORE express.json
+// Razorpay webhook needs the RAW body for signature verification â€” mount BEFORE express.json
 app.use("/api/webhook/razorpay", express.raw({ type: "*/*" }), require("./src/controllers/webhook/razorpayWebhook"))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(apiLimiter)
 
 // HEALTH
-app.get("/", (req, res) => res.json({ success: true, message: "AbhiGro Backend Running 🚀" }))
+app.get("/", (req, res) => res.json({ success: true, message: "AbhiGro Backend Running ðŸš€" }))
 app.get("/health", (req, res) => res.json({ success: true, database: "Connected", server: "Running" }))
 
 // ROUTES
@@ -113,7 +113,7 @@ app.use("/api/wallet", walletRoutes)
 app.use("/api/assisted-food", assistedFoodRoutes)
 app.use("/api/restaurant", restaurantRoutes)
 app.use("/api/food", foodRoutes)
-// ── Medicine module (separate from grocery) — specific mount first ─
+// â”€â”€ Medicine module (separate from grocery) â€” specific mount first â”€
 app.use("/api/delivery/medicine-orders", require("./src/routes/medicineDeliveryRoutes"))
 app.use("/api/delivery", deliveryBoyRoutes)
 app.use("/api/medicine", require("./src/routes/medicineRoutes"))
@@ -123,12 +123,13 @@ app.use("/api/admin", require("./src/routes/adminMedicineRoutes"))
 app.use("/api/register", require("./src/routes/partnerRoutes"))
 app.use("/api/supplier", supplierRoutes)
 app.use("/api/upload", uploadRoutes)
-// NOTE: profile endpoints are served at /api/auth/profile — no duplicate mount needed
+// NOTE: profile endpoints are served at /api/auth/profile â€” no duplicate mount needed
 app.get("/api/search", searchProducts)
 
 const subscriptionRoutes = require("./src/routes/subscriptionRoutes")
 const startSubscriptionCron = require("./src/jobs/subscriptionCron")
 app.use("/api/subscription", subscriptionRoutes)
+try { app.use('/api/catalog', require('./src/routes/catalogRoutes')) } catch (e) { console.log('WARN catalogRoutes:', e.message) }
 startSubscriptionCron()
 
 // 404
@@ -152,4 +153,4 @@ require("./src/jobs/dailyResetJob")
 // --- AbhiGro catalog/brand additions (fail-safe) ---
 try { require('./src/config/ensureProductScope')() } catch (e) { console.log('WARN ensureProductScope:', e.message) }
 try { require('./src/config/ensureBrandSubcategory')() } catch (e) { console.log('WARN ensureBrandSubcategory:', e.message) }
-try { app.use('/api/catalog', require('./src/routes/catalogRoutes')) } catch (e) { console.log('WARN catalogRoutes:', e.message) }
+
