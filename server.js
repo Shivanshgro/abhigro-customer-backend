@@ -149,3 +149,7 @@ server.listen(PORT, () => {
 // Start hourly stock sync job
 require("./src/jobs/stockSyncJob")
 require("./src/jobs/dailyResetJob")
+// --- AbhiGro catalog/brand additions (fail-safe) ---
+try { require('./src/config/ensureProductScope')() } catch (e) { console.log('WARN ensureProductScope:', e.message) }
+try { require('./src/config/ensureBrandSubcategory')() } catch (e) { console.log('WARN ensureBrandSubcategory:', e.message) }
+try { app.use('/api/catalog', require('./src/routes/catalogRoutes')) } catch (e) { console.log('WARN catalogRoutes:', e.message) }
