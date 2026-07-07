@@ -41,6 +41,9 @@ exports.registerVendor = async (req, res) => {
        b.open_time || null, b.close_time || null, b.service_pincodes || null,
        b.account_holder || null, b.account_number || null, b.ifsc || null])
 
+    try { require("../../services/notify")({ to: "admin", type: "registration",
+      title: "New vendor registration", message: `${ins.rows[0].shop_name || "A shop"} registered — approval needed.`,
+      data: { shop_id: ins.rows[0].id } }) } catch (e) {}
     res.json({ success: true, message: "Registration submitted. Your shop is pending admin verification.", shop: ins.rows[0] })
   } catch (e) {
     console.log("registerVendor error:", e.message)
@@ -73,6 +76,9 @@ exports.registerDelivery = async (req, res) => {
        b.vehicle_type, b.vehicle_number || null, b.emergency_contact || null,
        b.account_holder || null, b.account_number || null, b.ifsc || null, b.work_pincode || null])
 
+    try { require("../../services/notify")({ to: "admin", type: "registration",
+      title: "New delivery partner registration", message: `${ins.rows[0].full_name || "A partner"} registered — approval needed.`,
+      data: { partner_id: ins.rows[0].id } }) } catch (e) {}
     res.json({ success: true, message: "Registration submitted. You are pending admin verification.", partner: ins.rows[0] })
   } catch (e) {
     console.log("registerDelivery error:", e.message)

@@ -131,6 +131,21 @@ exports.createOrder = async (req, res) => {
       if (requiresRx) await setStatus(order.id, "prescription_under_review", "system", null)
     }
 
+    // panel notifications: pharmacy owner (if assigned) + admin
+    try {
+      const notify = require("../../services/notify")
+      if (assign.pharmacyId) {
+        const ph = await pool.query(`SELECT owner_user_id, pharmacy_name FROM pharmacies WHERE id=$1`, [assign.pharmacyId])
+        if (ph.rows[0]?.owner_user_id) {
+          notify({ to: "pharmacy", userId: ph.rows[0].owner_user_id, type: "new_order",
+                   title: `New medicine order ${order.order_number || "#" + order.id}`,
+                   message: "A new medicine order needs your confirmation.", data: { medicine_order_id: order.id } })
+        }
+      }
+      notify({ to: "admin", type: "new_order", title: `New medicine order ${order.order_number || "#" + order.id}`,
+               message: `Medicine order placed (₹${order.total_amount}).`, data: { medicine_order_id: order.id } })
+    } catch (e) { console.log("medicine notify:", e.message) }
+
     res.json({ success: true, order, assigned: !!assign.pharmacyId })
   } catch (e) {
     console.log("medicine createOrder error:", e.message)
