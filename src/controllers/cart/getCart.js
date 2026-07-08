@@ -27,6 +27,12 @@ products.name,
 
 products.price,
 
+products.mrp,
+
+products.unit,
+
+products.stock,
+
 products.image
 
 FROM cart

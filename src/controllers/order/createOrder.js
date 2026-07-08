@@ -69,10 +69,11 @@ const createOrder = async (req, res) => {
     const payStatus = isCOD ? "Pending" : "Paid"
 
     const order = await pool.query(
-      `INSERT INTO orders(user_id, address_id, total_amount, delivery_fee, payment_method, delivery_slot, pincode, status, assignment_status, payment_status)
-       VALUES($1,$2,$3,$4,$5,$6,$7,'Confirmed','pending',$8)
+      `INSERT INTO orders(user_id, address_id, total_amount, delivery_fee, payment_method, delivery_slot, pincode, status, assignment_status, payment_status, delivery_instructions, replacement_preference)
+       VALUES($1,$2,$3,$4,$5,$6,$7,'Confirmed','pending',$8,$9,$10)
        RETURNING *`,
-      [user_id, finalAddrId, total, delivery_fee, paymentMethod || "COD", slot, pincode, payStatus]
+      [user_id, finalAddrId, total, delivery_fee, paymentMethod || "COD", slot, pincode, payStatus,
+       req.body.delivery_instructions || null, req.body.replacement_preference || null]
     )
     const orderId = order.rows[0].id
 
@@ -94,6 +95,18 @@ const createOrder = async (req, res) => {
 
     // Notify admin dashboard live (socket only — free, no WhatsApp)
     try {
+      // panel notifications: assigned vendor + admin (stored + live)
+      try {
+        const notify = require("../../services/notify")
+        const shopOwner = await pool.query(`SELECT s.owner_user_id, s.shop_name FROM orders o JOIN shops s ON s.id=o.assigned_shop_id WHERE o.id=$1`, [order.id])
+        if (shopOwner.rows[0]?.owner_user_id) {
+          notify({ to: "vendor", userId: shopOwner.rows[0].owner_user_id, type: "new_order",
+                   title: `New order #${order.id}`, message: `You have a new order to pack.`, data: { order_id: order.id } })
+        }
+        notify({ to: "admin", type: "new_order", title: `New order #${order.id}`,
+                 message: `Customer order placed (₹${order.total_amount}).`, data: { order_id: order.id } })
+      } catch (e) { console.log("order notify:", e.message) }
+
       const { emitNewOrder } = require("../../socket/emit")
       const info = await pool.query(
         `SELECT u.name AS customer_name, u.phone AS customer_phone,
