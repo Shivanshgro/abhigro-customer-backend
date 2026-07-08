@@ -129,6 +129,7 @@ app.get("/api/search", searchProducts)
 const subscriptionRoutes = require("./src/routes/subscriptionRoutes")
 const startSubscriptionCron = require("./src/jobs/subscriptionCron")
 app.use("/api/subscription", subscriptionRoutes)
+try { app.use('/api/care', require('./src/routes/careRoutes')) } catch (e) { console.log('WARN careRoutes:', e.message) }
 try { app.use('/api/catalog', require('./src/routes/catalogRoutes')) } catch (e) { console.log('WARN catalogRoutes:', e.message) }
 startSubscriptionCron()
 
@@ -154,3 +155,6 @@ require("./src/jobs/dailyResetJob")
 try { require('./src/config/ensureProductScope')() } catch (e) { console.log('WARN ensureProductScope:', e.message) }
 try { require('./src/config/ensureBrandSubcategory')() } catch (e) { console.log('WARN ensureBrandSubcategory:', e.message) }
 
+
+
+try { require('./src/config/ensureCareSchema')() } catch (e) { console.log('WARN ensureCareSchema:', e.message) }
