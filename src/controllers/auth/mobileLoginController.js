@@ -27,7 +27,16 @@ const mobileLogin = async (req, res) => {
     }
 
     // Enforce registration + selected role + approval
-    const elig = await checkEligibility(mobile, role || "customer")
+    let elig = await checkEligibility(mobile, role || "customer")
+    // Customers: auto-create account on first login (mobile -> OTP -> in). One account per number.
+    if (!elig.ok && (role || "customer") === "customer" && elig.code === "not_registered") {
+      const pool = require("../../config/db")
+      const ins = await pool.query(
+        `INSERT INTO users(name, email, phone, role) VALUES($1,NULL,$2,'customer')
+         ON CONFLICT DO NOTHING RETURNING *`, [`User${String(mobile).slice(-4)}`, mobile])
+      const u2 = ins.rows[0] || (await pool.query(`SELECT * FROM users WHERE phone=$1 LIMIT 1`, [mobile])).rows[0]
+      if (u2) elig = { ok: true, user: u2 }
+    }
     if (!elig.ok) {
       return res.status(elig.code === "pending" ? 403 : 404).json({
         message: elig.message, notRegistered: elig.code === "not_registered" || elig.code === "wrong_role",
