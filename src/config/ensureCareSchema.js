@@ -37,6 +37,9 @@ async function ensureCareSchema() {
       )`)
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_tickets_user ON support_tickets(user_id, created_at DESC)`)
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_wallet_user ON wallet_transactions(user_id, created_at DESC)`)
+    await pool.query(`ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS priority VARCHAR(10) DEFAULT 'medium'`)
+    await pool.query(`ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS image TEXT DEFAULT ''`)
+    await pool.query(`ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS ai_summary TEXT DEFAULT ''`)
     console.log("✓ care schema ready (tickets/ratings/wallet)")
   } catch (e) { console.log("ensureCareSchema error:", e.message) }
 }
