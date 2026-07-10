@@ -129,6 +129,7 @@ app.get("/api/search", searchProducts)
 const subscriptionRoutes = require("./src/routes/subscriptionRoutes")
 const startSubscriptionCron = require("./src/jobs/subscriptionCron")
 app.use("/api/subscription", subscriptionRoutes)
+try { app.use('/api/area', require('./src/routes/areaRoutes')) } catch (e) { console.log('WARN areaRoutes:', e.message) }
 try { app.use('/api/supportbot', require('./src/routes/supportBotRoutes')) } catch (e) { console.log('WARN supportBot:', e.message) }
 try { app.use('/api/care', require('./src/routes/careRoutes')) } catch (e) { console.log('WARN careRoutes:', e.message) }
 try { app.use('/api/catalog', require('./src/routes/catalogRoutes')) } catch (e) { console.log('WARN catalogRoutes:', e.message) }
@@ -159,4 +160,5 @@ try { require('./src/config/ensureBrandSubcategory')() } catch (e) { console.log
 
 
 try { require('./src/config/ensureCareSchema')() } catch (e) { console.log('WARN ensureCareSchema:', e.message) }
+
 
