@@ -36,7 +36,7 @@ const foodRoutes = require("./src/routes/foodRoutes")
 
 const app = express()
 
-// CORS — must be very first middleware
+// CORS â€” must be very first middleware
 app.use((req, res, next) => {
   const _allow = (process.env.CORS_ORIGINS || "https://www.abhigro.com,https://abhigro.com").split(",")
   const _o = req.headers.origin
@@ -119,7 +119,7 @@ app.use(express.urlencoded({ extended: true }))
 app.use(apiLimiter)
 
 // HEALTH
-app.get("/", (req, res) => res.json({ success: true, message: "AbhiGro Backend Running 🚀" }))
+app.get("/", (req, res) => res.json({ success: true, message: "AbhiGro Backend Running ðŸš€" }))
 app.get("/health", (req, res) => res.json({ success: true, database: "Connected", server: "Running" }))
 
 // ROUTES
@@ -142,7 +142,7 @@ app.use("/api/wallet", walletRoutes)
 app.use("/api/assisted-food", assistedFoodRoutes)
 app.use("/api/restaurant", restaurantRoutes)
 app.use("/api/food", foodRoutes)
-// ── Medicine module (separate from grocery) — specific mount first ─
+// â”€â”€ Medicine module (separate from grocery) â€” specific mount first â”€
 app.use("/api/delivery/medicine-orders", require("./src/routes/medicineDeliveryRoutes"))
 app.use("/api/delivery", deliveryBoyRoutes)
 app.use("/api/medicine", require("./src/routes/medicineRoutes"))
@@ -152,7 +152,7 @@ app.use("/api/admin", require("./src/routes/adminMedicineRoutes"))
 app.use("/api/register", require("./src/routes/partnerRoutes"))
 app.use("/api/supplier", supplierRoutes)
 app.use("/api/upload", uploadRoutes)
-// NOTE: profile endpoints are served at /api/auth/profile — no duplicate mount needed
+// NOTE: profile endpoints are served at /api/auth/profile â€” no duplicate mount needed
 app.get("/api/search", searchProducts)
 
 const subscriptionRoutes = require("./src/routes/subscriptionRoutes")
@@ -163,6 +163,7 @@ try { app.use('/api/area', require('./src/routes/areaRoutes')) } catch (e) { con
 try { app.use('/api/supportbot', require('./src/routes/supportBotRoutes')) } catch (e) { console.log('WARN supportBot:', e.message) }
 try { app.use('/api/care', require('./src/routes/careRoutes')) } catch (e) { console.log('WARN careRoutes:', e.message) }
 try { app.use('/api/notify', require('./src/routes/notifyRoutes')) } catch (e) { console.log('WARN notifyRoutes:', e.message) }
+try { app.use('/api/catalog', require('./src/routes/catalogRoutes')) } catch (e) { console.log('WARN catalogRoutes:', e.message) }
 startSubscriptionCron()
 
 // 404
