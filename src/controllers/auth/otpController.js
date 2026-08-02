@@ -7,6 +7,10 @@ if (!JWT_SECRET) { console.error("FATAL: JWT_SECRET env variable is not set"); }
 const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY
 const MSG91_OTP_TEMPLATE_ID = process.env.MSG91_OTP_TEMPLATE_ID || process.env.MSG91_TEMPLATE_ID
 
+// Google Play reviewer test login (no SMS). Reviewer uses these to log in.
+const REVIEW_PHONE = "9999900000"
+const REVIEW_OTP = "480216"
+
 // Normalize an Indian mobile to MSG91 format: 91XXXXXXXXXX (digits only, last 10 + 91)
 function normalizeMobile(mobile) {
   const digits = String(mobile || "").replace(/\D/g, "")
@@ -21,6 +25,11 @@ exports.sendOtp = async (req, res) => {
     const { mobile } = req.body || {}
     const m = normalizeMobile(mobile)
     if (!m.valid) return res.status(400).json({ message: "Enter a valid 10-digit mobile number" })
+
+    // Reviewer test number: pretend OTP was sent (no real SMS).
+    if (m.last10 === REVIEW_PHONE) {
+      return res.json({ success: true, message: "OTP sent", request_id: "review-test" })
+    }
 
     if (!MSG91_AUTH_KEY || !MSG91_OTP_TEMPLATE_ID) {
       return res.status(500).json({ message: "OTP service not configured. Set MSG91_AUTH_KEY and MSG91_OTP_TEMPLATE_ID." })
@@ -50,6 +59,12 @@ exports.resendOtp = async (req, res) => {
   try {
     const m = normalizeMobile((req.body || {}).mobile)
     if (!m.valid) return res.status(400).json({ message: "Enter a valid 10-digit mobile number" })
+
+    // Reviewer test number: pretend OTP was resent.
+    if (m.last10 === REVIEW_PHONE) {
+      return res.json({ success: true, message: "OTP resent" })
+    }
+
     const r = await axios.get("https://control.msg91.com/api/v5/otp/retry", {
       params: { mobile: m.msg91, authkey: MSG91_AUTH_KEY, retrytype: "text" },
       headers: { authkey: MSG91_AUTH_KEY },
@@ -70,6 +85,26 @@ exports.verifyOtp = async (req, res) => {
     const m = normalizeMobile(mobile)
     if (!m.valid) return res.status(400).json({ message: "Enter a valid 10-digit mobile number" })
     if (!otp || String(otp).trim().length < 4) return res.status(400).json({ message: "Enter the OTP" })
+
+    // Reviewer test login: fixed number + OTP, no MSG91 call. Returns same shape as real login.
+    if (m.last10 === REVIEW_PHONE && String(otp).trim() === REVIEW_OTP) {
+      let tu = await pool.query(`SELECT * FROM users WHERE phone = $1`, [REVIEW_PHONE])
+      if (tu.rows.length === 0) {
+        tu = await pool.query(
+          `INSERT INTO users(name, phone, role) VALUES('Play Reviewer',$1,'customer') RETURNING *`,
+          [REVIEW_PHONE]
+        )
+      }
+      const tuser = tu.rows[0]
+      const at = jwt.sign({ id: tuser.id, phone: tuser.phone, role: tuser.role || "customer" }, JWT_SECRET, { expiresIn: "7d" })
+      const rt = jwt.sign({ id: tuser.id }, JWT_SECRET, { expiresIn: "30d" })
+      return res.json({
+        success: true,
+        accessToken: at,
+        refreshToken: rt,
+        user: { id: tuser.id, name: tuser.name, email: tuser.email, phone: tuser.phone, role: tuser.role || "customer" },
+      })
+    }
 
     const verify = await axios.get("https://control.msg91.com/api/v5/otp/verify", {
       params: { otp: String(otp).trim(), mobile: m.msg91 },
