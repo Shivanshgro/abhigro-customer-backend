@@ -1,0 +1,189 @@
+require("dotenv").config()
+require("./src/config/db")
+
+const express = require("express")
+const cors = require("cors")
+const helmet = require("helmet")
+const compression = require("compression")
+const http = require("http")
+const { Server } = require("socket.io")
+const apiLimiter = require("./src/middleware/rateLimiter")
+
+const authRoutes = require("./src/routes/authRoutes")
+const productRoutes = require("./src/routes/productRoutes")
+const cartRoutes = require("./src/routes/cartRoutes")
+const orderRoutes = require("./src/routes/orderRoutes")
+const wishlistRoutes = require("./src/routes/wishlistRoutes")
+const addressRoutes = require("./src/routes/addressRoutes")
+const paymentRoutes = require("./src/routes/paymentRoutes")
+const notificationRoutes = require("./src/routes/notificationRoutes")
+const couponRoutes = require("./src/routes/couponRoutes")
+const deliveryRoutes = require("./src/routes/deliveryRoutes")
+const adminRoutes = require("./src/routes/adminRoutes")
+const serviceRoutes = require("./src/routes/serviceRoutes")
+const groupBuyRoutes = require("./src/routes/groupBuyRoutes")
+const vendorRoutes = require("./src/routes/vendorRoutes")
+const deliveryBoyRoutes = require("./src/routes/deliveryBoyRoutes")
+const supplierRoutes = require("./src/routes/supplierRoutes")
+const uploadRoutes = require("./src/routes/uploadRoutes")
+const searchProducts = require("./src/controllers/product/searchProducts")
+const orderSocket = require("./src/socket/orderSocket")
+const trackingRoutes = require("./src/routes/trackingRoutes")
+const walletRoutes = require("./src/routes/walletRoutes")
+const assistedFoodRoutes = require("./src/routes/assistedFoodRoutes")
+const restaurantRoutes = require("./src/routes/restaurantRoutes")
+const foodRoutes = require("./src/routes/foodRoutes")
+
+const app = express()
+
+// CORS — must be very first middleware
+app.use((req, res, next) => {
+  const _allow = (process.env.CORS_ORIGINS || "https://www.abhigro.com,https://abhigro.com").split(",")
+  const _o = req.headers.origin
+  if (_o && _allow.includes(_o)) res.header("Access-Control-Allow-Origin", _o)
+  res.header("Access-Control-Allow-Credentials", "true")
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,PATCH,OPTIONS")
+  res.header("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With")
+  if (req.method === "OPTIONS") return res.sendStatus(200)
+  next()
+})
+
+app.use(cors({
+  origin: (origin, cb) => {
+    const allow = (process.env.CORS_ORIGINS || "https://www.abhigro.com,https://abhigro.com").split(",")
+    // allow same-origin/mobile apps (no origin) + allowlisted web origins
+    if (!origin || allow.includes(origin)) return cb(null, true)
+    return cb(null, false)
+  },
+  credentials: true,
+}))
+
+const server = http.createServer(app)
+const io = new Server(server, {
+  cors: {
+    origin: [
+      "https://www.abhigro.com", "https://abhigro.com",
+      "https://abhigro-admin-frontend.azurewebsites.net"
+    ],
+    methods: ["GET", "POST"]
+  }
+})
+
+// Socket auth handshake: verify JWT when provided, attach identity, never hard-fail
+// (keeps anonymous order-tracking working, but authenticated clients get a private room)
+try {
+  const jwt = require("jsonwebtoken")
+  io.use((socket, next) => {
+    const token = socket.handshake.auth && socket.handshake.auth.token
+    if (token && process.env.JWT_SECRET) {
+      try {
+        const u = jwt.verify(token, process.env.JWT_SECRET)
+        socket.user = { id: u.id, role: u.role || "customer" }
+      } catch (e) { /* invalid token -> treat as anonymous, don't block */ }
+    }
+    next()
+  })
+} catch (e) { console.log("socket auth setup skipped:", e.message) }
+
+orderSocket(io)
+
+// Make io available to controllers (delivery/vendor live updates)
+const { setIO } = require("./src/socket/emit")
+setIO(io)
+
+// Ensure new delivery/payment columns exist (idempotent, non-destructive)
+const ensureSchema = require("./src/config/ensureSchema")
+ensureSchema()
+const ensureTrackingSchema = require("./src/config/ensureTrackingSchema")
+ensureTrackingSchema()
+const ensureBatch2Schema = require("./src/config/ensureBatch2Schema")
+ensureBatch2Schema()
+const ensureAssistedFoodSchema = require("./src/config/ensureAssistedFoodSchema")
+ensureAssistedFoodSchema()
+const ensureRestaurantSchema = require("./src/config/ensureRestaurantSchema")
+ensureRestaurantSchema()
+
+// Ensure medicine module tables exist (idempotent, separate from grocery)
+const ensureMedicineSchema = require("./src/config/medicineSchema")
+ensureMedicineSchema()
+
+// Ensure vendor + delivery partner onboarding tables/columns exist
+const ensurePartnerSchema = require("./src/config/partnerSchema")
+ensurePartnerSchema()
+
+// MIDDLEWARE
+app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }))
+app.use(compression())
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
+app.use(apiLimiter)
+
+// HEALTH
+app.get("/", (req, res) => res.json({ success: true, message: "AbhiGro Backend Running 🚀" }))
+app.get("/health", (req, res) => res.json({ success: true, database: "Connected", server: "Running" }))
+
+// ROUTES
+app.use("/api/auth", authRoutes)
+app.use("/api/products", productRoutes)
+app.use("/api/cart", cartRoutes)
+app.use("/api/orders", orderRoutes)
+app.use("/api/wishlist", wishlistRoutes)
+app.use("/api/address", addressRoutes)
+app.use("/api/payment", paymentRoutes)
+app.use("/api/notifications", notificationRoutes)
+app.use("/api/coupons", couponRoutes)
+app.use("/api/delivery-slots", deliveryRoutes)
+app.use("/api/admin", adminRoutes)
+app.use("/api/service", serviceRoutes)
+app.use("/api/group-buy", groupBuyRoutes)
+app.use("/api/vendor", vendorRoutes)
+app.use("/api/tracking", trackingRoutes)
+app.use("/api/wallet", walletRoutes)
+app.use("/api/assisted-food", assistedFoodRoutes)
+app.use("/api/restaurant", restaurantRoutes)
+app.use("/api/food", foodRoutes)
+// ── Medicine module (separate from grocery) — specific mount first ─
+app.use("/api/delivery/medicine-orders", require("./src/routes/medicineDeliveryRoutes"))
+app.use("/api/delivery", deliveryBoyRoutes)
+app.use("/api/medicine", require("./src/routes/medicineRoutes"))
+app.use("/api/pharmacy", require("./src/routes/pharmacyRoutes"))
+app.use("/api/admin", require("./src/routes/adminMedicineRoutes"))
+// Public partner self-registration (vendor + delivery)
+app.use("/api/register", require("./src/routes/partnerRoutes"))
+app.use("/api/supplier", supplierRoutes)
+app.use("/api/upload", uploadRoutes)
+// NOTE: profile endpoints are served at /api/auth/profile — no duplicate mount needed
+app.get("/api/search", searchProducts)
+
+const subscriptionRoutes = require("./src/routes/subscriptionRoutes")
+const startSubscriptionCron = require("./src/jobs/subscriptionCron")
+app.use("/api/subscription", subscriptionRoutes)
+try { app.use('/api/marketing', require('./src/routes/marketingRoutes')) } catch (e) { console.log('WARN marketing:', e.message) }
+try { app.use('/api/area', require('./src/routes/areaRoutes')) } catch (e) { console.log('WARN areaRoutes:', e.message) }
+try { app.use('/api/supportbot', require('./src/routes/supportBotRoutes')) } catch (e) { console.log('WARN supportBot:', e.message) }
+try { app.use('/api/care', require('./src/routes/careRoutes')) } catch (e) { console.log('WARN careRoutes:', e.message) }
+try { app.use('/api/notify', require('./src/routes/notifyRoutes')) } catch (e) { console.log('WARN notifyRoutes:', e.message) }
+startSubscriptionCron()
+
+// 404
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: "Route Not Found" })
+})
+
+// ERROR
+app.use((err, req, res, next) => {
+  console.log("SERVER ERROR:", err)
+  res.status(500).json({ success: false, message: "Internal Server Error" })
+})
+
+const PORT = process.env.PORT || 5000
+server.listen(PORT, () => {
+  console.log(`AbhiGro Backend running on port ${PORT}`)
+})
+// Start hourly stock sync job
+require("./src/jobs/stockSyncJob")
+require("./src/jobs/dailyResetJob")
+// panel notifications schema (fail-safe)
+try { require('./src/config/ensureNotifySchema')() } catch (e) { console.log('WARN ensureNotifySchema:', e.message) }
+
+try { require('./src/config/ensureCareSchema')() } catch (e) { console.log('WARN ensureCareSchema:', e.message) }

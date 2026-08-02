@@ -45,14 +45,15 @@ const mobileLogin = async (req, res) => {
     }
 
     const u = elig.user
+    const effectiveRole = (role || u.role || "customer")
     const accessToken = jwt.sign(
-      { id: u.id, phone: u.phone, role: u.role || "customer", name: u.name },
+      { id: u.id, phone: u.phone, role: effectiveRole, name: u.name },
       JWT_SECRET, { expiresIn: "7d" })
     const refreshToken = jwt.sign({ id: u.id }, JWT_SECRET, { expiresIn: "30d" })
 
     res.json({
       accessToken, refreshToken,
-      user: { id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role || "customer" },
+      user: { id: u.id, name: u.name, email: u.email, phone: u.phone, role: effectiveRole },
     })
   } catch (error) {
     console.log("Mobile login error:", error.message)
