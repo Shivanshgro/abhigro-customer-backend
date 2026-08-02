@@ -114,6 +114,7 @@ ensurePartnerSchema()
 // MIDDLEWARE
 app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }))
 app.use(compression())
+try { app.use('/api/webhook', express.raw({ type: '*/*' }), require('./src/routes/webhookRoutes')) } catch (e) { console.log('WARN webhookRoutes:', e.message) }
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(apiLimiter)
