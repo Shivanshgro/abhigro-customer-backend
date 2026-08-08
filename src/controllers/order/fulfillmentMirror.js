@@ -10,7 +10,7 @@ async function categorizeItems(items) {
   let cats = {}
   try {
     const r = await pool.query(
-      `SELECT p.id AS product_id, COALESCE(c.name, ''grocery'') AS category
+      `SELECT p.id AS product_id, COALESCE(c.name, 'grocery') AS category
        FROM products p
        LEFT JOIN categories c ON c.id = p.category_id
        WHERE p.id = ANY($1::int[])`,
@@ -34,7 +34,7 @@ async function mirrorOrder({ legacyOrderId, userId, pincode, lat, lng, total, it
     await client.query("BEGIN")
     const parent = await client.query(
       `INSERT INTO parent_orders (legacy_order_id, customer_id, latitude, longitude, total, overall_status)
-       VALUES ($1,$2,$3,$4,$5,''placed'') RETURNING id`,
+       VALUES ($1,$2,$3,$4,$5,'placed') RETURNING id`,
       [legacyOrderId, userId, lat, lng, total]
     )
     const parentId = parent.rows[0].id
@@ -46,7 +46,7 @@ async function mirrorOrder({ legacyOrderId, userId, pincode, lat, lng, total, it
     for (const [category, catItems] of Object.entries(grouped)) {
       const ford = await client.query(
         `INSERT INTO fulfillment_orders (parent_order_id, fulfillment_location_id, category, status)
-         VALUES ($1,$2,$3,''created'') RETURNING id`,
+         VALUES ($1,$2,$3,'created') RETURNING id`,
         [parentId, flocId, category]
       )
       const fordId = ford.rows[0].id
