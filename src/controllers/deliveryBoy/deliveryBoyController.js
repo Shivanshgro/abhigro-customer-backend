@@ -224,7 +224,7 @@ exports.markDelivered = async (req, res) => {
     await pool.query(
       `UPDATE orders
        SET status='Completed', delivery_photo=$1, payment_status=$2,
-           cash_collected = CASE WHEN $2='Collected' THEN true ELSE cash_collected END,
+           cash_collected = CASE WHEN $2::text='Collected' THEN true ELSE cash_collected END,
            delivered_at=NOW()
        WHERE id=$3 AND delivery_boy_id=$4`,
       [proofUrl, paymentStatus, id, req.user.id]
