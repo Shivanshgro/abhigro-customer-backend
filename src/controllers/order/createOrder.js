@@ -1,4 +1,4 @@
-﻿const pool = require("../../config/db")
+const pool = require("../../config/db")
 const { autoAssignOrder } = require("../vendor/autoAssignService")
 const { distanceKm, deliveryFee } = require("../../utils/distance")
 const { getDeliverySettings } = require("../../utils/settings")
@@ -87,8 +87,10 @@ const createOrder = async (req, res) => {
     await pool.query(`DELETE FROM cart WHERE user_id = $1`, [user_id])
 
     let assignment = { assigned: false }
+    const { mirrorOrder } = require("./fulfillmentMirror")
     try {
       assignment = await autoAssignOrder(orderId, pincode, items)
+        try { const { mirrorOrder } = require("./fulfillmentMirror"); await mirrorOrder({ legacyOrderId: orderId, userId: user_id, pincode, lat: custLat, lng: custLng, total, items, assignedShopId: assignment.shop_id || null }) } catch (me) { console.log("fulfillment mirror (non-blocking):", me.message) }
     } catch (e) {
       console.log("Auto-assign error:", e.message)
     }
