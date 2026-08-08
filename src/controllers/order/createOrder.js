@@ -31,16 +31,16 @@ const createOrder = async (req, res) => {
     try {
       let addr
       if (finalAddrId) {
-        addr = await pool.query(`SELECT id, pincode, latitude, longitude FROM addresses WHERE id=$1`, [finalAddrId])
+        addr = await pool.query(`SELECT id, pincode FROM addresses WHERE id=$1`, [finalAddrId])
       }
       if (!addr || addr.rows.length === 0) {
-        addr = await pool.query(`SELECT id, pincode, latitude, longitude FROM addresses WHERE user_id=$1 ORDER BY id DESC LIMIT 1`, [user_id])
+        addr = await pool.query(`SELECT id, pincode FROM addresses WHERE user_id=$1 ORDER BY id DESC LIMIT 1`, [user_id])
       }
       if (addr.rows.length > 0) {
         finalAddrId = addr.rows[0].id
         pincode = addr.rows[0].pincode || null
-        custLat = addr.rows[0].latitude
-        custLng = addr.rows[0].longitude
+        custLat = null
+        custLng = null
       }
     } catch (e) { console.log("pincode lookup error:", e.message) }
 
