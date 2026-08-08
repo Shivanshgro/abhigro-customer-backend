@@ -10,7 +10,7 @@ async function categorizeItems(items) {
   let cats = {}
   try {
     const r = await pool.query(
-      `SELECT p.id AS product_id, COALESCE(c.name, 'grocery') AS category
+      `SELECT p.id AS product_id, COALESCE(c.fulfillment_type, 'grocery') AS category
        FROM products p
        LEFT JOIN categories c ON c.id = p.category_id
        WHERE p.id = ANY($1::int[])`,
