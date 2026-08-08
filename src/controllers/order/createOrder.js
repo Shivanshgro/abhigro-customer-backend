@@ -90,7 +90,7 @@ const createOrder = async (req, res) => {
     const { mirrorOrder } = require("./fulfillmentMirror")
     try {
       assignment = await autoAssignOrder(orderId, pincode, items)
-        try { const { mirrorOrder } = require("./fulfillmentMirror"); await mirrorOrder({ legacyOrderId: orderId, userId: user_id, pincode, lat: custLat, lng: custLng, total, items, assignedShopId: assignment.shop_id || null }) } catch (me) { console.log("fulfillment mirror (non-blocking):", me.message) }
+        try { const { mirrorOrder } = require("./fulfillmentMirror"); const mres = await mirrorOrder({ legacyOrderId: orderId, userId: user_id, pincode, lat: custLat, lng: custLng, total, items, assignedShopId: assignment.shop_id || null }); if (mres && mres.parent_order_id) { const { createDeliveryJobForParent } = require("../delivery/deliveryJobService"); await createDeliveryJobForParent(mres.parent_order_id) } } catch (me) { console.log("fulfillment mirror (non-blocking):", me.message) }
     } catch (e) {
       console.log("Auto-assign error:", e.message)
     }
