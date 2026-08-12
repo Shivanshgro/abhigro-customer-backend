@@ -1,4 +1,4 @@
-﻿const pool = require("../../config/db")
+const pool = require("../../config/db")
 
 function normPhone(p) { return String(p || "").replace(/\D/g, "").slice(-10) }
 
@@ -19,7 +19,6 @@ const registerRestaurant = async (req, res) => {
     if (!b.restaurant_name) return res.status(400).json({ message: "Restaurant name is required" })
     if (phone.length !== 10) return res.status(400).json({ message: "Valid 10-digit phone is required" })
     if (!b.fssai_number) return res.status(400).json({ message: "FSSAI number is mandatory" })
-    if (!b.fssai_certificate) return res.status(400).json({ message: "FSSAI certificate upload is mandatory" })
 
     const ownerId = await findOrCreateUser(b.owner_name || b.restaurant_name, phone, "restaurant")
 
