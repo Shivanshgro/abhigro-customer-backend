@@ -52,9 +52,13 @@ exports.placeOrder = async (req, res) => {
       `INSERT INTO food_orders
         (customer_id, restaurant_id, items, food_amount, platform_fee, delivery_fee, tax_amount, total_amount,
          payment_status, order_status, delivery_address, delivery_latitude, delivery_longitude, delivery_phone)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending','placed',$9,$10,$11,$12) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$13,$14,$9,$10,$11,$12) RETURNING *`,
       [customerId, restaurant_id, JSON.stringify(lineItems), foodAmount, platformFee, deliveryFee, tax, total,
-       delivery_address||null, delivery_lat||null, delivery_lng||null, delivery_phone||null])
+       delivery_address||null, delivery_lat||null, delivery_lng||null, delivery_phone||null,
+       razorpay ? "pending" : "cod",
+       // COD has nothing to wait for, so it reaches the kitchen immediately.
+       // Prepaid stays out of the queue until verifyPayment confirms the signature.
+       razorpay ? "placed" : "restaurant_pending"])
     const order = o.rows[0]
 
     // create Razorpay order for the full total
@@ -83,7 +87,9 @@ exports.verifyPayment = async (req, res) => {
     const r = await pool.query(
       `UPDATE food_orders SET payment_status='paid', payment_id=$1,
          order_status='restaurant_pending'
-       WHERE id=$2 RETURNING *`, [razorpay_payment_id||null, req.params.id])
+       WHERE id=$2 AND customer_id=$3 AND razorpay_order_id=$4
+         AND payment_status <> 'paid' RETURNING *`,
+      [razorpay_payment_id||null, req.params.id, req.user.id, razorpay_order_id])
     if (r.rows.length === 0) return res.status(404).json({ message: "Order not found" })
 
     try {
