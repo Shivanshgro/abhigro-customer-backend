@@ -90,7 +90,14 @@ exports.verifyPayment = async (req, res) => {
        WHERE id=$2 AND customer_id=$3 AND razorpay_order_id=$4
          AND payment_status <> 'paid' RETURNING *`,
       [razorpay_payment_id||null, req.params.id, req.user.id, razorpay_order_id])
-    if (r.rows.length === 0) return res.status(404).json({ message: "Order not found" })
+    if (r.rows.length === 0) {
+      // Zero rows means one of: wrong customer, mismatched razorpay order, or the
+      // order was already paid. The last is a duplicate callback and is a success.
+      const ex = await pool.query(`SELECT * FROM food_orders WHERE id=$1 AND customer_id=$2`, [req.params.id, req.user.id])
+      if (ex.rows[0] && ex.rows[0].payment_status === "paid")
+        return res.json({ success:true, order: ex.rows[0], note:"Already verified" })
+      return res.status(404).json({ message: "Order not found or payment mismatch" })
+    }
 
     try {
       const { emitNewOrder } = require("../../socket/emit")

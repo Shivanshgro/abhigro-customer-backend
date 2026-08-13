@@ -1,9 +1,37 @@
 const pool = require("../../config/db")
-const { emitOrderUpdate, emitDeliveryAvailable } = require("../../socket/emit")
+const { transition } = require("../../services/foodOrderState")
 
+// Resolve the restaurant this user owns. Kept exactly as before.
+// NOTE: when restaurant_staff / multi-outlet lands, this is the single place to
+// widen — every handler below already routes its ownership check through it.
 async function ownedRestaurant(userId) {
   const r = await pool.query(`SELECT id FROM food_restaurants WHERE owner_id=$1`, [userId])
   return r.rows[0] || null
+}
+
+// Shared wrapper: resolve the restaurant, run the transition, map errors.
+// Every status change now goes through foodOrderState.transition(), which:
+//   - locks the row (two taps cannot both succeed)
+//   - refuses illegal moves and orders belonging to another restaurant
+//   - writes food_order_events in the SAME transaction as the status change
+//   - emits to the customer and the restaurant room AFTER the commit
+async function move(req, res, to, extra = {}) {
+  const rest = await ownedRestaurant(req.user.id)
+  if (!rest) return res.status(403).json({ message: "No restaurant" })
+  try {
+    const order = await transition({
+      orderId: req.params.id,
+      to,
+      actorType: "restaurant",
+      actorId: req.user.id,
+      scope: { restaurantId: rest.id },
+      ...extra,
+    })
+    return res.json({ success: true, order })
+  } catch (e) {
+    // TransitionError carries a real status code; anything else is a 500.
+    return res.status(e.code || 500).json({ message: e.message })
+  }
 }
 
 // GET /api/restaurant/orders — today's / active food orders for this restaurant
@@ -19,74 +47,66 @@ exports.getOrders = async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
 
-// POST /api/restaurant/orders/:id/accept
+// POST /api/restaurant/orders/:id/accept   { prep_minutes }
+// prep_minutes is new: the panel offers 10/15/20 and the countdown needs it.
 exports.accept = async (req, res) => {
-  try {
-    const rest = await ownedRestaurant(req.user.id)
-    if (!rest) return res.status(403).json({ message: "No restaurant" })
-    const r = await pool.query(
-      `UPDATE food_orders SET restaurant_accept_status='accepted', order_status='restaurant_accepted', accepted_at=NOW()
-       WHERE id=$1 AND restaurant_id=$2 AND order_status IN ('payment_successful','restaurant_pending') RETURNING *`,
-      [req.params.id, rest.id])
-    if (r.rows.length === 0) return res.status(409).json({ message: "Order can't be accepted" })
-    emitOrderUpdate(`food_${r.rows[0].id}`, { type: "status", order_status: "restaurant_accepted" })
-    res.json({ success: true, order: r.rows[0] })
-  } catch (e) { res.status(500).json({ message: e.message }) }
+  const raw = parseInt(req.body.prep_minutes, 10)
+  const prep = Number.isFinite(raw) ? Math.min(Math.max(raw, 1), 90) : 20
+  return move(req, res, "restaurant_accepted", {
+    set: { restaurant_accept_status: "accepted", prep_minutes: prep },
+    note: `Accepted, ${prep} min`,
+  })
 }
 
-// POST /api/restaurant/orders/:id/reject  { reason }
+// POST /api/restaurant/orders/:id/reject   { reason }
+// Previously this had NO state guard and would cancel an already-delivered
+// order. transition() now refuses anything past 'preparing'.
 exports.reject = async (req, res) => {
+  const reason = (req.body.reason || "Restaurant rejected").toString().slice(0, 300)
   try {
     const rest = await ownedRestaurant(req.user.id)
     if (!rest) return res.status(403).json({ message: "No restaurant" })
-    const r = await pool.query(
-      `UPDATE food_orders SET restaurant_accept_status='rejected', order_status='cancelled',
-         cancellation_reason=$1, refund_status='pending'
-       WHERE id=$2 AND restaurant_id=$3 RETURNING *`,
-      [req.body.reason || "Restaurant rejected", req.params.id, rest.id])
-    if (r.rows.length === 0) return res.status(404).json({ message: "Order not found" })
-    emitOrderUpdate(`food_${r.rows[0].id}`, { type: "status", order_status: "cancelled" })
-    res.json({ success: true, order: r.rows[0], note: "Customer refund flagged pending" })
-  } catch (e) { res.status(500).json({ message: e.message }) }
+    const order = await transition({
+      orderId: req.params.id,
+      to: "cancelled",
+      actorType: "restaurant",
+      actorId: req.user.id,
+      scope: { restaurantId: rest.id },
+      set: {
+        restaurant_accept_status: "rejected",
+        cancellation_reason: reason,
+        // only flag a refund if money was actually taken
+        refund_status: "pending",
+      },
+      note: reason,
+    })
+    res.json({
+      success: true,
+      order,
+      note: order.payment_status === "paid"
+        ? "Customer refund flagged pending"
+        : "No payment taken — nothing to refund",
+    })
+  } catch (e) {
+    res.status(e.code || 500).json({ message: e.message })
+  }
 }
 
 // POST /api/restaurant/orders/:id/preparing
-exports.preparing = async (req, res) => {
-  try {
-    const rest = await ownedRestaurant(req.user.id)
-    if (!rest) return res.status(403).json({ message: "No restaurant" })
-    const r = await pool.query(
-      `UPDATE food_orders SET order_status='preparing'
-       WHERE id=$1 AND restaurant_id=$2 AND order_status='restaurant_accepted' RETURNING *`,
-      [req.params.id, rest.id])
-    if (r.rows.length === 0) return res.status(409).json({ message: "Can't mark preparing" })
-    emitOrderUpdate(`food_${r.rows[0].id}`, { type: "status", order_status: "preparing" })
-    res.json({ success: true, order: r.rows[0] })
-  } catch (e) { res.status(500).json({ message: e.message }) }
-}
+exports.preparing = (req, res) => move(req, res, "preparing")
 
-// POST /api/restaurant/orders/:id/ready  — food ready; offer to delivery partners
-exports.ready = async (req, res) => {
-  try {
-    const rest = await ownedRestaurant(req.user.id)
-    if (!rest) return res.status(403).json({ message: "No restaurant" })
-    const r = await pool.query(
-      `UPDATE food_orders SET order_status='food_ready'
-       WHERE id=$1 AND restaurant_id=$2 AND order_status IN ('preparing','delivery_assigned') RETURNING *`,
-      [req.params.id, rest.id])
-    if (r.rows.length === 0) return res.status(409).json({ message: "Can't mark ready" })
-    emitOrderUpdate(`food_${r.rows[0].id}`, { type: "status", order_status: "food_ready" })
-    emitDeliveryAvailable({ type: "food", order_id: r.rows[0].id, restaurant_id: rest.id })
-    res.json({ success: true, order: r.rows[0] })
-  } catch (e) { res.status(500).json({ message: e.message }) }
-}
+// POST /api/restaurant/orders/:id/ready — food ready; offered to delivery partners
+// The emitDeliveryAvailable broadcast now happens inside transition(), so it
+// fires only after the status change has actually committed.
+exports.ready = (req, res) => move(req, res, "food_ready")
 
 // GET /api/restaurant/payouts
 exports.payouts = async (req, res) => {
   try {
     const rest = await ownedRestaurant(req.user.id)
     if (!rest) return res.status(403).json({ message: "No restaurant" })
-    const r = await pool.query(`SELECT * FROM restaurant_payouts WHERE restaurant_id=$1 ORDER BY id DESC`, [rest.id])
+    const r = await pool.query(
+      `SELECT * FROM restaurant_payouts WHERE restaurant_id=$1 ORDER BY id DESC`, [rest.id])
     res.json({ success: true, payouts: r.rows })
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
