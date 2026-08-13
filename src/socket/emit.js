@@ -33,4 +33,13 @@ function emitNewOrder(payload = {}) {
   } catch (e) { /* ignore */ }
 }
 
-module.exports = { setIO, getIO, emitOrderUpdate, emitDeliveryAvailable, emitNewOrder }
+// Emit to one restaurant's room only. Without this, emitNewOrder broadcasts to
+// every connected client, so every restaurant would see every other
+// restaurant's orders.
+function emitToRestaurant(restaurantId, event, payload = {}) {
+  try {
+    if (_io) _io.to(`restaurant_${restaurantId}`).emit(event, payload)
+  } catch (e) { /* ignore */ }
+}
+
+module.exports = { setIO, getIO, emitOrderUpdate, emitDeliveryAvailable, emitNewOrder, emitToRestaurant }
