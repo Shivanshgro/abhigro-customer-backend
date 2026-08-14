@@ -1,4 +1,5 @@
 const express = require("express")
+const unified = require("../controllers/deliveryBoy/allAvailable")
 const router = express.Router()
 const auth = require("../middleware/authMiddleware")
 const upload = require("../middleware/upload")
@@ -18,5 +19,9 @@ router.post("/:id/picked",         auth, d.markPickedUp)    // legacy simple pic
 router.post("/:id/proof",     auth, upload.any(), d.uploadDeliveryProof) // delivery proof photo
 router.post("/:id/collect",   auth, d.collectPayment)                    // COD cash collected
 router.post("/:id/delivered", auth, upload.any(), d.markDelivered)       // proof + COD + Completed
+
+// One feed across every vertical, so a rider does not check two screens.
+router.get("/all-available", auth, unified.allAvailable)
+router.get("/all-mine", auth, unified.allMine)
 
 module.exports = router
