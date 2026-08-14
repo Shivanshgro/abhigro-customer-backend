@@ -6,6 +6,7 @@ const { myRestaurant, setOnline } = require("../controllers/restaurant/myRestaur
 const menu = require("../controllers/restaurant/menu")
 const ro = require("../controllers/restaurant/restaurantOrders")
 const extras = require("../controllers/restaurant/restaurantExtras")
+const settings = require("../controllers/restaurant/restaurantSettings")
 
 router.post("/register", registerRestaurant)
 router.get("/me", auth, myRestaurant)
@@ -40,5 +41,21 @@ router.post("/reviews/:id/reply", auth, extras.replyReview)
 
 // Reports
 router.get("/reports", auth, extras.getReports)
+
+// Profile, hours, staff
+router.put("/profile", auth, settings.updateProfile)
+router.get("/hours", auth, settings.getHours)
+router.put("/hours", auth, settings.setHours)
+router.post("/closed-today", auth, settings.setClosedToday)
+router.get("/staff", auth, settings.getStaff)
+router.post("/staff", auth, settings.addStaff)
+router.delete("/staff/:id", auth, settings.removeStaff)
+
+// Menu extras
+router.post("/item/:id/flags", auth, settings.setItemFlags)
+router.post("/item/:id/move", auth, settings.moveItem)
+router.get("/item/:id/options", auth, settings.getItemOptions)
+router.post("/item/:id/options", auth, settings.addItemOptionGroup)
+router.delete("/options/:groupId", auth, settings.deleteOptionGroup)
 
 module.exports = router

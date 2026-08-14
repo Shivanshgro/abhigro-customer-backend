@@ -24,6 +24,7 @@ const serviceRoutes = require("./src/routes/serviceRoutes")
 const groupBuyRoutes = require("./src/routes/groupBuyRoutes")
 const vendorRoutes = require("./src/routes/vendorRoutes")
 const deliveryBoyRoutes = require("./src/routes/deliveryBoyRoutes")
+try { require("./src/services/foodAutoReject").start() } catch (e) { console.log("WARN foodAutoReject:", e.message) }
 const supplierRoutes = require("./src/routes/supplierRoutes")
 const uploadRoutes = require("./src/routes/uploadRoutes")
 const searchProducts = require("./src/controllers/product/searchProducts")
