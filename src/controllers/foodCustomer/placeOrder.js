@@ -119,3 +119,38 @@ exports.myOrders = async (req, res) => {
     res.json({ success:true, orders:r.rows })
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
+
+// POST /api/food/check-offer   { restaurant_id, items:[{item_id,quantity}], code }
+// Same validator as checkout, so the preview and the charge cannot disagree.
+exports.checkOffer = async (req, res) => {
+  try {
+    const { restaurant_id, items, code } = req.body || {}
+    if (!restaurant_id || !Array.isArray(items) || items.length === 0)
+      return res.status(400).json({ message: "Restaurant and items required" })
+
+    let foodAmount = 0
+    for (const it of items) {
+      const p = await pool.query(
+        `SELECT price FROM food_items WHERE id=$1 AND restaurant_id=$2 AND is_active=true`,
+        [it.item_id, restaurant_id])
+      if (p.rows.length === 0) continue
+      foodAmount += Number(p.rows[0].price) * Math.max(1, parseInt(it.quantity, 10) || 1)
+    }
+
+    const off = await validateOffer({
+      code, restaurantId: restaurant_id, customerId: req.user.id, foodAmount,
+    })
+    if (!off.ok) return res.status(400).json({ success: false, message: off.message })
+
+    res.json({
+      success: true,
+      discount: off.discount,
+      code: off.offer ? off.offer.code : null,
+      message: off.offer
+        ? (off.offer.discount_type === "percent"
+            ? off.offer.discount_value + "% off applied"
+            : "Discount applied")
+        : "No coupon",
+    })
+  } catch (e) { res.status(500).json({ message: e.message }) }
+}

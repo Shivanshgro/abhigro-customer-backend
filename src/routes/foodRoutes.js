@@ -11,6 +11,7 @@ router.get("/restaurants/:id/menu", browse.restaurantMenu)
 router.post("/order", auth, order.placeOrder)
 router.post("/order/:id/verify", auth, order.verifyPayment)
 router.get("/my-orders", auth, order.myOrders)
+router.post("/check-offer", auth, order.checkOffer)
 router.post("/order/:id/rate", auth, del.rate)
 
 // ── Delivery partner ────────────────────────────────────────────────────────
