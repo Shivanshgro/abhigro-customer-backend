@@ -1,5 +1,6 @@
 const pool = require("../../config/db")
 const crypto = require("crypto")
+const { validateOffer, markUsed } = require("../../services/offerValidator")
 
 let razorpay = null
 try {
@@ -21,7 +22,7 @@ async function settings() {
 exports.placeOrder = async (req, res) => {
   try {
     const customerId = req.user.id
-    const { restaurant_id, items, delivery_address, delivery_lat, delivery_lng, delivery_phone } = req.body
+    const { restaurant_id, items, delivery_address, delivery_lat, delivery_lng, delivery_phone, offer_code } = req.body
     if (!restaurant_id || !Array.isArray(items) || items.length === 0)
       return res.status(400).json({ message: "Restaurant and items required" })
 
@@ -46,30 +47,40 @@ exports.placeOrder = async (req, res) => {
     const platformFee = s.food_platform_fee
     const deliveryFee = s.food_delivery_fee
     const tax = Math.round(foodAmount * (s.food_tax_percent/100) * 100) / 100
-    const total = Math.round((foodAmount + platformFee + deliveryFee + tax) * 100) / 100
+    // A coupon is judged here, server side. Any discount the client claims is ignored.
+    const off = await validateOffer({
+      code: offer_code, restaurantId: restaurant_id,
+      customerId: customerId, foodAmount,
+    })
+    if (!off.ok) return res.status(400).json({ message: off.message })
+    const discount = off.discount || 0
+
+    const total = Math.round((foodAmount + platformFee + deliveryFee + tax - discount) * 100) / 100
 
     const o = await pool.query(
       `INSERT INTO food_orders
-        (customer_id, restaurant_id, items, food_amount, platform_fee, delivery_fee, tax_amount, total_amount,
+        (customer_id, restaurant_id, items, food_amount, platform_fee, delivery_fee, tax_amount, total_amount, discount_amount, offer_code,
          payment_status, order_status, delivery_address, delivery_latitude, delivery_longitude, delivery_phone)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$13,$14,$9,$10,$11,$12) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$16,$13,$14,$9,$10,$11,$12) RETURNING *`,
       [customerId, restaurant_id, JSON.stringify(lineItems), foodAmount, platformFee, deliveryFee, tax, total,
        delivery_address||null, delivery_lat||null, delivery_lng||null, delivery_phone||null,
        razorpay ? "pending" : "cod",
        // COD has nothing to wait for, so it reaches the kitchen immediately.
        // Prepaid stays out of the queue until verifyPayment confirms the signature.
-       razorpay ? "placed" : "restaurant_pending"])
+       razorpay ? "placed" : "restaurant_pending",
+       discount, off.offer ? off.offer.code : null])
     const order = o.rows[0]
+    if (off.offer) await markUsed(off.offer.id)
 
     // create Razorpay order for the full total
     if (razorpay) {
       const rzp = await razorpay.orders.create({ amount: Math.round(total*100), currency:"INR", receipt:`food_${order.id}` })
       await pool.query(`UPDATE food_orders SET razorpay_order_id=$1 WHERE id=$2`, [rzp.id, order.id])
       return res.json({ success:true, order, razorpay_order: rzp, key: process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY,
-        breakdown:{ food_amount:foodAmount, platform_fee:platformFee, delivery_fee:deliveryFee, tax, total } })
+        breakdown:{ food_amount:foodAmount, platform_fee:platformFee, delivery_fee:deliveryFee, tax, discount, total } })
     }
     res.json({ success:true, order, razorpay_order:null, message:"Razorpay keys missing — COD/test",
-      breakdown:{ food_amount:foodAmount, platform_fee:platformFee, delivery_fee:deliveryFee, tax, total } })
+      breakdown:{ food_amount:foodAmount, platform_fee:platformFee, delivery_fee:deliveryFee, tax, discount, total } })
   } catch (e) { console.log("placeOrder error:", e.message); res.status(500).json({ message: e.message }) }
 }
 
