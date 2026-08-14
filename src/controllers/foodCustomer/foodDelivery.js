@@ -114,7 +114,8 @@ exports.outForDelivery = (req, res) => move(req, res, "out_for_delivery")
 exports.delivered = async (req, res) => {
   try {
     const set = {}
-    if (req.body.proof_image) set.delivery_photo = req.body.proof_image
+    const b = req.body || {}
+    if (b.proof_image) set.delivery_photo = b.proof_image
 
     const order = await transition({
       orderId: req.params.id, to: "delivered",
