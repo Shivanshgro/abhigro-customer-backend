@@ -2,6 +2,7 @@ const express      = require("express")
 const router       = express.Router()
 const auth         = require("../middleware/authMiddleware")
 const admin        = require("../middleware/adminMiddleware")
+const settle       = require("../controllers/admin/adminSettlements")
 const dashboardStats = require("../controllers/admin/dashboardStats")
 const addProduct   = require("../controllers/admin/addProduct")
 const updateProduct = require("../controllers/admin/updateProduct")
@@ -52,5 +53,13 @@ router.get("/suppliers", auth, admin, async (req, res) => {
     res.json({ success: true, suppliers: result.rows })
   } catch (e) { res.status(500).json({ message: e.message }) }
 })
+
+// Restaurant settlements
+router.get("/settlements", auth, admin, settle.list)
+router.get("/settlements/unsettled", auth, admin, settle.unsettled)
+router.get("/settlements/:id", auth, admin, settle.detail)
+router.post("/settlements/run", auth, admin, settle.run)
+router.post("/settlements/run/:restaurantId", auth, admin, settle.runOne)
+router.post("/settlements/:id/paid", auth, admin, settle.markPaid)
 
 module.exports = router
