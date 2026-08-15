@@ -44,6 +44,33 @@ const createOrder = async (req, res) => {
       }
     } catch (e) { console.log("pincode lookup error:", e.message) }
 
+    // Serviceability gate. Taking an order we cannot deliver is worse than
+    // refusing it: the customer waits, nobody is alerted, and the order sits
+    // unfulfilled. Checked server side because the location picker can be
+    // bypassed and older app builds may not check at all.
+    try {
+      if (!pincode) {
+        return res.status(400).json({
+          message: "Please add a delivery address with a pincode before ordering",
+        })
+      }
+      const svc = await pool.query(
+        `SELECT 1 FROM service_areas WHERE pincode = $1 AND is_active = true LIMIT 1`,
+        [String(pincode).trim()])
+      if (svc.rows.length === 0) {
+        console.log(`[Serviceability] refused order for pincode ${pincode}`)
+        return res.status(400).json({
+          message: `Sorry, we do not deliver to ${pincode} yet. We are expanding across Bengaluru soon.`,
+          notServiceable: true,
+          pincode,
+        })
+      }
+    } catch (e) {
+      // A failure here must not silently let an unserviceable order through
+      console.log("serviceability check error:", e.message)
+      return res.status(503).json({ message: "Could not verify delivery to your area. Please try again." })
+    }
+
     // --- Delivery fee: same logic as the /orders/quote endpoint, computed server-side ---
     let delivery_fee = 0
     try {
