@@ -22,7 +22,7 @@ async function settings() {
 exports.placeOrder = async (req, res) => {
   try {
     const customerId = req.user.id
-    const { restaurant_id, items, delivery_address, delivery_lat, delivery_lng, delivery_phone, offer_code } = req.body
+    const { restaurant_id, items, delivery_address, delivery_lat, delivery_lng, delivery_phone, offer_code, payment_method } = req.body
     if (!restaurant_id || !Array.isArray(items) || items.length === 0)
       return res.status(400).json({ message: "Restaurant and items required" })
 
@@ -48,6 +48,11 @@ exports.placeOrder = async (req, res) => {
     const deliveryFee = s.food_delivery_fee
     const tax = Math.round(foodAmount * (s.food_tax_percent/100) * 100) / 100
     // A coupon is judged here, server side. Any discount the client claims is ignored.
+    // The customer chooses. Previously this was decided by whether Razorpay
+    // keys happened to be configured, which forced everyone to pay online.
+    // COD is how most first orders happen here, so it must be a real option.
+    const wantsCOD = String(payment_method || "").toLowerCase() === "cod" || !razorpay
+
     const off = await validateOffer({
       code: offer_code, restaurantId: restaurant_id,
       customerId: customerId, foodAmount,
@@ -59,27 +64,28 @@ exports.placeOrder = async (req, res) => {
 
     const o = await pool.query(
       `INSERT INTO food_orders
-        (customer_id, restaurant_id, items, food_amount, platform_fee, delivery_fee, tax_amount, total_amount, discount_amount, offer_code,
+        (customer_id, restaurant_id, items, food_amount, platform_fee, delivery_fee, tax_amount, total_amount, discount_amount, offer_code, payment_method,
          payment_status, order_status, delivery_address, delivery_latitude, delivery_longitude, delivery_phone)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$16,$13,$14,$9,$10,$11,$12) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$16,$17,$13,$14,$9,$10,$11,$12) RETURNING *`,
       [customerId, restaurant_id, JSON.stringify(lineItems), foodAmount, platformFee, deliveryFee, tax, total,
        delivery_address||null, delivery_lat||null, delivery_lng||null, delivery_phone||null,
-       razorpay ? "pending" : "cod",
+       wantsCOD ? "cod" : "pending",
        // COD has nothing to wait for, so it reaches the kitchen immediately.
        // Prepaid stays out of the queue until verifyPayment confirms the signature.
-       razorpay ? "placed" : "restaurant_pending",
-       discount, off.offer ? off.offer.code : null])
+       wantsCOD ? "restaurant_pending" : "placed",
+       discount, off.offer ? off.offer.code : null,
+       wantsCOD ? "COD" : "Online"])
     const order = o.rows[0]
     if (off.offer) await markUsed(off.offer.id)
 
     // create Razorpay order for the full total
-    if (razorpay) {
+    if (razorpay && !wantsCOD) {
       const rzp = await razorpay.orders.create({ amount: Math.round(total*100), currency:"INR", receipt:`food_${order.id}` })
       await pool.query(`UPDATE food_orders SET razorpay_order_id=$1 WHERE id=$2`, [rzp.id, order.id])
       return res.json({ success:true, order, razorpay_order: rzp, key: process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY,
         breakdown:{ food_amount:foodAmount, platform_fee:platformFee, delivery_fee:deliveryFee, tax, discount, total } })
     }
-    res.json({ success:true, order, razorpay_order:null, message:"Razorpay keys missing — COD/test",
+    res.json({ success:true, order, razorpay_order:null, cod:true, message:"Order placed — COD/test",
       breakdown:{ food_amount:foodAmount, platform_fee:platformFee, delivery_fee:deliveryFee, tax, discount, total } })
   } catch (e) { console.log("placeOrder error:", e.message); res.status(500).json({ message: e.message }) }
 }
@@ -147,6 +153,11 @@ exports.checkOffer = async (req, res) => {
       if (p.rows.length === 0) continue
       foodAmount += Number(p.rows[0].price) * Math.max(1, parseInt(it.quantity, 10) || 1)
     }
+
+    // The customer chooses. Previously this was decided by whether Razorpay
+    // keys happened to be configured, which forced everyone to pay online.
+    // COD is how most first orders happen here, so it must be a real option.
+    const wantsCOD = String(payment_method || "").toLowerCase() === "cod" || !razorpay
 
     const off = await validateOffer({
       code, restaurantId: restaurant_id, customerId: req.user.id, foodAmount,
