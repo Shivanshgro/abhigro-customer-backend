@@ -4,6 +4,7 @@ const auth = require("../middleware/authMiddleware")
 const browse = require("../controllers/foodCustomer/browse")
 const order = require("../controllers/foodCustomer/placeOrder")
 const del = require("../controllers/foodCustomer/foodDelivery")
+const track = require("../controllers/foodCustomer/foodTracking")
 
 // ── Customer ────────────────────────────────────────────────────────────────
 router.get("/restaurants", browse.nearbyRestaurants)
@@ -13,6 +14,8 @@ router.post("/order/:id/verify", auth, order.verifyPayment)
 router.get("/my-orders", auth, order.myOrders)
 router.post("/check-offer", auth, order.checkOffer)
 router.post("/order/:id/rate", auth, del.rate)
+router.get("/order/:id/track", auth, track.track)
+router.post("/order/:id/cancel", auth, track.cancel)
 
 // ── Delivery partner ────────────────────────────────────────────────────────
 // The rider chain is: claim → (arrived) → pickup → out → delivered.
