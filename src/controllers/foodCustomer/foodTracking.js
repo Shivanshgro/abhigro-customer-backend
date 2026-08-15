@@ -29,7 +29,10 @@ function etaMinutes(order) {
   if (order.order_status === "delivered") return 0
   const prep = Number(order.prep_minutes) || 20
   const ride = 15                                  // rough door-to-door
-  const placed = new Date(order.accepted_at || order.created_at)
+  // Before the kitchen accepts, the clock has not really started - counting from
+  // placement makes an old unanswered order claim it is arriving imminently.
+  if (!order.accepted_at) return prep + ride
+  const placed = new Date(order.accepted_at)
   const done = new Date(placed.getTime() + (prep + ride) * 60000)
   return Math.max(1, Math.round((done - Date.now()) / 60000))
 }
