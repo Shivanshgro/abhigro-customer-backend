@@ -1,5 +1,6 @@
 const express = require("express")
 const router = express.Router()
+const allOrders = require("../controllers/order/allOrders")
 const auth = require("../middleware/authMiddleware")
 const createOrder = require("../controllers/order/createOrder")
 const getOrders = require("../controllers/order/getOrders")
@@ -24,5 +25,7 @@ router.get("/:id", auth, trackOrder)
 router.post("/:id/cancel", auth, cancelOrder)
 router.post("/:id/items/:itemId/cancel", auth, cancelItem)
 router.post("/:id/reorder", auth, reorder)
+
+router.get("/all", auth, allOrders.allOrders)
 
 module.exports = router
