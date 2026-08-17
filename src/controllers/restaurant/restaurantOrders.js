@@ -42,7 +42,9 @@ exports.getOrders = async (req, res) => {
     const r = await pool.query(
       `SELECT o.*, u.name AS customer_name, u.phone AS customer_phone
        FROM food_orders o LEFT JOIN users u ON u.id=o.customer_id
-       WHERE o.restaurant_id=$1 ORDER BY o.id DESC LIMIT 100`, [rest.id])
+       WHERE o.restaurant_id=$1
+         AND o.order_status <> 'placed'
+       ORDER BY o.id DESC LIMIT 100`, [rest.id])
     res.json({ success: true, orders: r.rows })
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
