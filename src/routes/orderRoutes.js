@@ -1,5 +1,6 @@
 const express = require("express")
 const router = express.Router()
+const gTrack = require("../controllers/order/groceryTracking")
 const allOrders = require("../controllers/order/allOrders")
 const auth = require("../middleware/authMiddleware")
 const createOrder = require("../controllers/order/createOrder")
@@ -21,6 +22,7 @@ router.get("/quote", auth, getQuote)
 // Must sit above /:id or Express reads "all" as an order id
 // Must sit above /:id or Express reads "all" as an order id
 router.get("/all", auth, allOrders.allOrders)
+router.get("/:id/track", auth, gTrack.track)
 router.get("/:id/tracking", auth, getTracking)
 router.get("/:id/invoice", auth, getInvoice)
 router.get("/:id", auth, trackOrder)
