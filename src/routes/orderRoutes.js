@@ -18,6 +18,9 @@ router.post("/verify-payment", auth, verifyPayment)
 router.post("/", auth, createOrder)
 router.get("/", auth, getOrders)
 router.get("/quote", auth, getQuote)
+// Must sit above /:id or Express reads "all" as an order id
+// Must sit above /:id or Express reads "all" as an order id
+router.get("/all", auth, allOrders.allOrders)
 router.get("/:id/tracking", auth, getTracking)
 router.get("/:id/invoice", auth, getInvoice)
 router.get("/:id", auth, trackOrder)
@@ -26,6 +29,5 @@ router.post("/:id/cancel", auth, cancelOrder)
 router.post("/:id/items/:itemId/cancel", auth, cancelItem)
 router.post("/:id/reorder", auth, reorder)
 
-router.get("/all", auth, allOrders.allOrders)
 
 module.exports = router
