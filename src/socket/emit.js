@@ -36,10 +36,18 @@ function emitNewOrder(payload = {}) {
 // Emit to one restaurant's room only. Without this, emitNewOrder broadcasts to
 // every connected client, so every restaurant would see every other
 // restaurant's orders.
+// Tell every rider an order has been claimed, so it disappears from their list
+// instead of them tapping it and being told it is gone.
+function emitOrderTaken(payload = {}) {
+  try {
+    if (_io) _io.emit("orderTaken", payload)
+  } catch (e) { /* ignore */ }
+}
+
 function emitToRestaurant(restaurantId, event, payload = {}) {
   try {
     if (_io) _io.to(`restaurant_${restaurantId}`).emit(event, payload)
   } catch (e) { /* ignore */ }
 }
 
-module.exports = { setIO, getIO, emitOrderUpdate, emitDeliveryAvailable, emitNewOrder, emitToRestaurant }
+module.exports = { setIO, getIO, emitOrderUpdate, emitDeliveryAvailable, emitNewOrder, emitToRestaurant, emitOrderTaken }

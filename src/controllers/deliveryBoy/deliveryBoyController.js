@@ -1,6 +1,7 @@
 const pool = require("../../config/db")
 const cloudinary = require("../../config/cloudinary")
 const { notifyUser, emitOrderUpdate } = require("../../services/notificationService")
+const { transition, TransitionError } = require("../../services/groceryOrderState")
 
 const isCOD = (m) => !m || /cod/i.test(m)
 
@@ -69,7 +70,7 @@ exports.goToPickup = async (req, res) => {
   try {
     const { id } = req.params
     const result = await pool.query(
-      `UPDATE orders SET delivery_boy_id = $1
+      `UPDATE orders SET delivery_boy_id = $1, assigned_at = NOW()
        WHERE id = $2 AND status = 'Packed' AND delivery_boy_id IS NULL
        RETURNING id`,
       [req.user.id, id]
@@ -77,6 +78,11 @@ exports.goToPickup = async (req, res) => {
     if (result.rows.length === 0)
       return res.status(400).json({ message: "Order already taken or not available" })
     emitOrderUpdate(id, { status: "Packed", delivery_boy_id: req.user.id })
+    try {
+      const { emitOrderTaken } = require("../../socket/emit")
+      // other riders should see it vanish rather than tap a dead order
+      emitOrderTaken({ type: "grocery", order_id: Number(id), delivery_boy_id: req.user.id })
+    } catch (e) { /* realtime is a nicety */ }
     res.json({ success: true, message: "Assigned to you. Head to the shop." })
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
