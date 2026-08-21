@@ -1,6 +1,7 @@
 const pool = require("../../config/db")
 const cloudinary = require("../../config/cloudinary")
 const { notifyUser, emitOrderUpdate } = require("../../services/notificationService")
+const { checkArrival, arrivalMessage } = require("../../utils/geofence")
 
 const isCOD = (m) => !m || /cod/i.test(m)
 
@@ -8,6 +9,11 @@ const isCOD = (m) => !m || /cod/i.test(m)
 const ORDER_FIELDS = `
   o.id, o.total_amount, o.pincode, o.status, o.payment_method, o.payment_status,
   o.packed_photo, o.delivery_photo, o.cash_collected, o.picked_up_at, o.delivered_at,
+  o.arrived_at, o.geofence_radius_m,
+  COALESCE(o.customer_latitude,  a.latitude)  AS customer_latitude,
+  COALESCE(o.customer_longitude, a.longitude) AS customer_longitude,
+  COALESCE(o.vendor_latitude,  s.latitude)    AS vendor_latitude,
+  COALESCE(o.vendor_longitude, s.longitude)   AS vendor_longitude,
   s.shop_name, s.address AS shop_address, s.phone AS shop_phone,
   a.address_line AS customer_address, a.phone AS customer_phone`
 
@@ -196,6 +202,33 @@ exports.markDelivered = async (req, res) => {
     if (o.status !== "Out For Delivery" && o.status !== "Completed")
       return res.status(400).json({ message: "Confirm pickup first — order must be Out For Delivery." })
 
+    // 0) GEOFENCE — verified server-side, re-checked at this exact moment.
+    // A live fix may be supplied in the body; it is written to
+    // delivery_partner_locations and read back before the distance is computed,
+    // so an earlier ping from the right place cannot satisfy this check.
+    if (o.status !== "Completed") {
+      const body0 = req.body || {}
+      const arrival = await checkArrival(id, {
+        latitude:  body0.latitude  ?? body0.lat ?? null,
+        longitude: body0.longitude ?? body0.lng ?? null,
+        partnerId: req.user.id,
+      })
+      if (!arrival.allowed) {
+        return res.status(403).json({
+          message: arrivalMessage(arrival),
+          geofence: arrival,
+        })
+      }
+      if (arrival.distance_m != null) {
+        await pool.query(
+          `UPDATE orders SET delivered_distance_m=$1,
+             arrived_at = COALESCE(arrived_at, NOW())
+           WHERE id=$2`,
+          [arrival.distance_m, id]
+        )
+      }
+    }
+
     // 1) Delivery proof photo (inline upload optional if already provided via /proof)
     let proofUrl = o.delivery_photo
     const file = req.file || (req.files && req.files[0])
@@ -273,6 +306,48 @@ exports.markDelivered = async (req, res) => {
     })
   } catch (e) {
     console.log("markDelivered error:", e.message)
+    res.status(500).json({ message: e.message })
+  }
+}
+
+// GET /api/delivery/:id/arrival — live geofence status for this partner's order.
+// The panel polls this to decide whether "Complete Delivery" is enabled.
+// Optional ?latitude=&longitude= records a fresh fix at the same time.
+exports.arrivalStatus = async (req, res) => {
+  try {
+    const { id } = req.params
+    const own = await pool.query(
+      `SELECT id, status FROM orders WHERE id=$1 AND delivery_boy_id=$2`,
+      [id, req.user.id])
+    if (own.rows.length === 0)
+      return res.status(404).json({ message: "Order not assigned to you" })
+
+    const arrival = await checkArrival(id, {
+      latitude:  req.query.latitude  ?? req.body?.latitude  ?? null,
+      longitude: req.query.longitude ?? req.body?.longitude ?? null,
+      partnerId: req.user.id,
+    })
+
+    if (arrival.within) {
+      await pool.query(
+        `UPDATE orders SET arrived_at = COALESCE(arrived_at, NOW()) WHERE id=$1`, [id])
+    }
+
+    res.json({
+      success: true,
+      order_status: own.rows[0].status,
+      can_complete: arrival.allowed,
+      within: arrival.within,
+      distance_m: arrival.distance_m,
+      radius_m: arrival.radius_m,
+      enforced: arrival.enforced,
+      reason: arrival.reason,
+      message: arrival.within
+        ? "Arrived at Delivery Location"
+        : arrivalMessage(arrival),
+    })
+  } catch (e) {
+    console.log("arrivalStatus error:", e.message)
     res.status(500).json({ message: e.message })
   }
 }

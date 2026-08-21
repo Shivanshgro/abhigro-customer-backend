@@ -1,112 +1,70 @@
-const pool=
-require("../../config/db")
+const pool = require("../../config/db")
 
-const updateAddress=
-async(req,res)=>{
+// PUT /api/address/:id — update in place. Never inserts.
+//
+// SECURITY: the previous version matched on `WHERE id = $8` only, with the row's
+// user_id taken from the request body. Any signed-in user could overwrite any
+// other user's address by guessing an id, and could reassign ownership. This
+// version scopes every update to the authenticated user and ignores body user_id.
+const updateAddress = async (req, res) => {
+  try {
+    const user_id = req.user.id
+    const b = req.body || {}
+    const id = req.params.id ?? b.id
+    if (!id) return res.status(400).json({ message: "Address id is required" })
 
-try{
+    // Load the caller's own row first — this is the ownership gate.
+    const existing = await pool.query(
+      `SELECT * FROM addresses WHERE id=$1 AND user_id=$2`, [id, user_id])
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ message: "Address not found" })
+    }
+    const cur = existing.rows[0]
 
-console.log(
-"BODY:",
-req.body
-)
+    // Accept both field-name styles; fall back to the current value.
+    const pick = (a, bb, fallback) => {
+      const v = a !== undefined ? a : bb
+      return v === undefined ? fallback : v
+    }
+    const full_name    = pick(b.full_name, b.name, cur.full_name)
+    const phone        = pick(b.phone, undefined, cur.phone)
+    const address_line = pick(b.address_line, b.address, cur.address_line)
+    const city         = pick(b.city, undefined, cur.city)
+    const state        = pick(b.state, undefined, cur.state)
+    const pincode      = pick(b.pincode, undefined, cur.pincode)
+    const label        = pick(b.label, undefined, cur.label)
 
-const{
+    let latitude  = pick(b.latitude,  b.lat, cur.latitude)
+    let longitude = pick(b.longitude, b.lng, cur.longitude)
+    latitude  = latitude  === "" || latitude  === null ? null : Number(latitude)
+    longitude = longitude === "" || longitude === null ? null : Number(longitude)
+    if ((latitude != null && isNaN(latitude)) || (longitude != null && isNaN(longitude))) {
+      return res.status(400).json({ message: "Invalid coordinates" })
+    }
 
-id,
-user_id,
-full_name,
-phone,
-address_line,
-city,
-state,
-pincode
+    const result = await pool.query(
+      `UPDATE addresses SET
+         full_name=$1, phone=$2, address_line=$3, city=$4,
+         state=$5, pincode=$6, label=$7, latitude=$8, longitude=$9
+       WHERE id=$10 AND user_id=$11
+       RETURNING id, id AS "_id", user_id,
+                 full_name AS name, full_name,
+                 phone,
+                 address_line AS address, address_line,
+                 city, state, pincode, label, latitude, longitude`,
+      [full_name, phone, address_line, city, state, pincode, label,
+       latitude, longitude, id, user_id]
+    )
 
-}=req.body
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Address not found" })
+    }
 
-const result=
-
-await pool.query(
-
-`
-UPDATE addresses
-
-SET
-
-user_id=
-COALESCE(
-$1,
-user_id
-),
-
-full_name=$2,
-
-phone=$3,
-
-address_line=$4,
-
-city=$5,
-
-state=$6,
-
-pincode=$7
-
-WHERE id=$8
-
-RETURNING *
-`,
-
-[
-user_id,
-full_name,
-phone,
-address_line,
-city,
-state,
-pincode,
-id
-]
-
-)
-
-if(
-result.rows.length===0
-){
-
-return res.status(404).json({
-
-message:
-"Address Not Found"
-
-})
-
+    res.json({ success: true, address: result.rows[0] })
+  } catch (error) {
+    console.log("updateAddress error:", error.message)
+    res.status(500).json({ message: error.message })
+  }
 }
 
-res.json({
-
-success:true,
-
-address:
-result.rows[0]
-
-})
-
-}
-
-catch(error){
-
-console.log(error)
-
-res.status(500).json({
-
-message:
-error.message
-
-})
-
-}
-
-}
-
-module.exports=
-updateAddress
+module.exports = updateAddress

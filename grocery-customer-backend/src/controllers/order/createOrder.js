@@ -31,7 +31,9 @@ const createOrder = async (req, res) => {
     try {
       let addr
       if (finalAddrId) {
-        addr = await pool.query(`SELECT id, pincode, latitude, longitude FROM addresses WHERE id=$1`, [finalAddrId])
+        addr = await pool.query(
+          `SELECT id, pincode, latitude, longitude FROM addresses WHERE id=$1 AND user_id=$2`,
+          [finalAddrId, user_id])
       }
       if (!addr || addr.rows.length === 0) {
         addr = await pool.query(`SELECT id, pincode, latitude, longitude FROM addresses WHERE user_id=$1 ORDER BY id DESC LIMIT 1`, [user_id])
@@ -43,6 +45,20 @@ const createOrder = async (req, res) => {
         custLng = addr.rows[0].longitude
       }
     } catch (e) { console.log("pincode lookup error:", e.message) }
+
+    // --- Serviceability, checked against the address actually selected at checkout ---
+    if (pincode) {
+      try {
+        const sa = await pool.query(
+          `SELECT is_active FROM service_areas WHERE pincode=$1`, [pincode])
+        if (sa.rows.length === 0 || sa.rows[0].is_active === false) {
+          return res.status(400).json({
+            message: "We do not deliver to this address yet. Please choose another address.",
+            serviceable: false, pincode,
+          })
+        }
+      } catch (e) { console.log("serviceability check skipped:", e.message) }
+    }
 
     // --- Delivery fee: same logic as the /orders/quote endpoint, computed server-side ---
     let delivery_fee = 0
@@ -69,10 +85,10 @@ const createOrder = async (req, res) => {
     const payStatus = isCOD ? "Pending" : "Paid"
 
     const order = await pool.query(
-      `INSERT INTO orders(user_id, address_id, total_amount, delivery_fee, payment_method, delivery_slot, pincode, status, assignment_status, payment_status)
-       VALUES($1,$2,$3,$4,$5,$6,$7,'Confirmed','pending',$8)
+      `INSERT INTO orders(user_id, address_id, total_amount, delivery_fee, payment_method, delivery_slot, pincode, status, assignment_status, payment_status, customer_latitude, customer_longitude)
+       VALUES($1,$2,$3,$4,$5,$6,$7,'Confirmed','pending',$8,$9,$10)
        RETURNING *`,
-      [user_id, finalAddrId, total, delivery_fee, paymentMethod || "COD", slot, pincode, payStatus]
+      [user_id, finalAddrId, total, delivery_fee, paymentMethod || "COD", slot, pincode, payStatus, custLat, custLng]
     )
     const orderId = order.rows[0].id
 

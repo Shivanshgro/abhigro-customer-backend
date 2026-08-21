@@ -15,6 +15,9 @@ router.post("/:id/confirm-pickup", auth, d.confirmPickup)   // confirm with orde
 router.post("/:id/picked",         auth, d.markPickedUp)    // legacy simple pickup (kept)
 
 // Delivery completion
+// Geofence — live arrival status (panel polls this to enable the button)
+router.get("/:id/arrival", auth, d.arrivalStatus)
+
 router.post("/:id/proof",     auth, upload.any(), d.uploadDeliveryProof) // delivery proof photo
 router.post("/:id/collect",   auth, d.collectPayment)                    // COD cash collected
 router.post("/:id/delivered", auth, upload.any(), d.markDelivered)       // proof + COD + Completed
