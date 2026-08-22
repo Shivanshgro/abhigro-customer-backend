@@ -1,13 +1,10 @@
 const pool = require("../../config/db")
 
-// GET /api/address — this user's addresses.
-// Returns both alias styles so existing screens keep working.
 const getAddress = async (req, res) => {
   try {
     const user_id = req.user.id
-
     const result = await pool.query(
-      `SELECT
+      `SELECT 
         id,
         id AS "_id",
         full_name AS name,
@@ -27,7 +24,6 @@ const getAddress = async (req, res) => {
        ORDER BY is_default DESC NULLS LAST, id DESC`,
       [user_id]
     )
-
     res.json(result.rows)
   } catch (error) {
     console.log("getAddress error:", error.message)

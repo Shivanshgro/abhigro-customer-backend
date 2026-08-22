@@ -1,4 +1,4 @@
-﻿const pool = require("../../config/db")
+const pool = require("../../config/db")
 const { autoAssignOrder } = require("../vendor/autoAssignService")
 const { distanceKm, deliveryFee } = require("../../utils/distance")
 const { getDeliverySettings } = require("../../utils/settings")
@@ -46,27 +46,11 @@ const createOrder = async (req, res) => {
       }
     } catch (e) { console.log("pincode lookup error:", e.message) }
 
-    // --- Serviceability, checked against the address actually selected at checkout ---
-    if (pincode) {
-      try {
-        const sa = await pool.query(
-          `SELECT is_active FROM service_areas WHERE pincode=$1`, [pincode])
-        if (sa.rows.length === 0 || sa.rows[0].is_active === false) {
-          return res.status(400).json({
-            message: "We do not deliver to this address yet. Please choose another address.",
-            serviceable: false, pincode,
-          })
-        }
-      } catch (e) { console.log("serviceability check skipped:", e.message) }
-    }
-
-    // --- Delivery fee: same logic as the /orders/quote endpoint, computed server-side ---
     let delivery_fee = 0
     try {
       const settings = await getDeliverySettings()
       const free = settings.free_delivery_above_order > 0 && subtotal >= settings.free_delivery_above_order
       if (!free) {
-        // distance from nearest active shop (fallback) to customer
         let sLat = null, sLng = null
         const shop = await pool.query(`SELECT latitude, longitude FROM shops WHERE is_active=true AND latitude IS NOT NULL ORDER BY id LIMIT 1`)
         if (shop.rows.length > 0) { sLat = shop.rows[0].latitude; sLng = shop.rows[0].longitude }
@@ -108,18 +92,16 @@ const createOrder = async (req, res) => {
       console.log("Auto-assign error:", e.message)
     }
 
-    // Notify admin dashboard live (socket only — free, no WhatsApp)
     try {
-      // panel notifications: assigned vendor + admin (stored + live)
       try {
         const notify = require("../../services/notify")
-        const shopOwner = await pool.query(`SELECT s.owner_user_id, s.shop_name FROM orders o JOIN shops s ON s.id=o.assigned_shop_id WHERE o.id=$1`, [order.id])
+        const shopOwner = await pool.query(`SELECT s.owner_user_id, s.shop_name FROM orders o JOIN shops s ON s.id=o.assigned_shop_id WHERE o.id=$1`, [orderId])
         if (shopOwner.rows[0]?.owner_user_id) {
           notify({ to: "vendor", userId: shopOwner.rows[0].owner_user_id, type: "new_order",
-                   title: `New order #${order.id}`, message: `You have a new order to pack.`, data: { order_id: order.id } })
+                   title: `New order #${orderId}`, message: `You have a new order to pack.`, data: { order_id: orderId } })
         }
-        notify({ to: "admin", type: "new_order", title: `New order #${order.id}`,
-                 message: `Customer order placed (₹${order.total_amount}).`, data: { order_id: order.id } })
+        notify({ to: "admin", type: "new_order", title: `New order #${orderId}`,
+                 message: `Customer order placed.`, data: { order_id: orderId } })
       } catch (e) { console.log("order notify:", e.message) }
 
       const { emitNewOrder } = require("../../socket/emit")

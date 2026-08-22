@@ -1,11 +1,6 @@
 const pool = require("../../config/db")
 
-// PUT /api/address/:id — update in place. Never inserts.
-//
-// SECURITY: the previous version matched on `WHERE id = $8` only, with the row's
-// user_id taken from the request body. Any signed-in user could overwrite any
-// other user's address by guessing an id, and could reassign ownership. This
-// version scopes every update to the authenticated user and ignores body user_id.
+// PUT /api/address/:id â update in place, scoped to the authenticated user.
 const updateAddress = async (req, res) => {
   try {
     const user_id = req.user.id
@@ -13,7 +8,6 @@ const updateAddress = async (req, res) => {
     const id = req.params.id ?? b.id
     if (!id) return res.status(400).json({ message: "Address id is required" })
 
-    // Load the caller's own row first — this is the ownership gate.
     const existing = await pool.query(
       `SELECT * FROM addresses WHERE id=$1 AND user_id=$2`, [id, user_id])
     if (existing.rows.length === 0) {
@@ -21,7 +15,6 @@ const updateAddress = async (req, res) => {
     }
     const cur = existing.rows[0]
 
-    // Accept both field-name styles; fall back to the current value.
     const pick = (a, bb, fallback) => {
       const v = a !== undefined ? a : bb
       return v === undefined ? fallback : v

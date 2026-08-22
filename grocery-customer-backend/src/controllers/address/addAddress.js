@@ -1,9 +1,6 @@
 const pool = require("../../config/db")
 
 // POST /api/address
-// Accepts both the short field names the frontend already sends
-// (name/address) and the column names (full_name/address_line),
-// so nothing that currently calls this endpoint breaks.
 const addAddress = async (req, res) => {
   try {
     const b = req.body || {}

@@ -12,12 +12,12 @@ const ORDER_FIELDS = `
   o.arrived_at, o.geofence_radius_m,
   COALESCE(o.customer_latitude,  a.latitude)  AS customer_latitude,
   COALESCE(o.customer_longitude, a.longitude) AS customer_longitude,
-  COALESCE(o.vendor_latitude,  s.latitude)    AS vendor_latitude,
-  COALESCE(o.vendor_longitude, s.longitude)   AS vendor_longitude,
+  COALESCE(o.vendor_latitude,  NULLIF(s.latitude,'')::double precision)  AS vendor_latitude,
+  COALESCE(o.vendor_longitude, NULLIF(s.longitude,'')::double precision) AS vendor_longitude,
   s.shop_name, s.address AS shop_address, s.phone AS shop_phone,
   a.address_line AS customer_address, a.phone AS customer_phone`
 
-// GET /api/delivery/available — packed orders not yet picked up by a boy
+// GET /api/delivery/available â packed orders not yet picked up by a boy
 exports.availableOrders = async (req, res) => {
   try {
     const orders = await pool.query(
@@ -35,7 +35,7 @@ exports.availableOrders = async (req, res) => {
   }
 }
 
-// GET /api/delivery/my — this delivery boy's active deliveries
+// GET /api/delivery/my â this delivery boy's active deliveries
 exports.myDeliveries = async (req, res) => {
   try {
     const orders = await pool.query(
@@ -54,7 +54,7 @@ exports.myDeliveries = async (req, res) => {
   }
 }
 
-// GET /api/delivery/history — completed deliveries
+// GET /api/delivery/history â completed deliveries
 exports.history = async (req, res) => {
   try {
     const orders = await pool.query(
@@ -70,7 +70,7 @@ exports.history = async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
 
-// POST /api/delivery/:id/pickup — claim a packed order (atomic; first wins)
+// POST /api/delivery/:id/pickup â claim a packed order (atomic; first wins)
 exports.goToPickup = async (req, res) => {
   try {
     const { id } = req.params
@@ -87,7 +87,7 @@ exports.goToPickup = async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
 
-// POST /api/delivery/:id/confirm-pickup — confirm pickup USING THE ORDER NUMBER
+// POST /api/delivery/:id/confirm-pickup â confirm pickup USING THE ORDER NUMBER
 // Body: { orderNumber }  -> must match the order id. Sets status Out For Delivery.
 exports.confirmPickup = async (req, res) => {
   try {
@@ -116,7 +116,7 @@ exports.confirmPickup = async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
 
-// POST /api/delivery/:id/picked — legacy/simple pickup (kept for compatibility)
+// POST /api/delivery/:id/picked â legacy/simple pickup (kept for compatibility)
 // Accepts optional orderNumber; if provided it must match.
 exports.markPickedUp = async (req, res) => {
   try {
@@ -138,7 +138,7 @@ exports.markPickedUp = async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
 
-// POST /api/delivery/:id/proof — upload delivery proof photo (multipart, any field)
+// POST /api/delivery/:id/proof â upload delivery proof photo (multipart, any field)
 exports.uploadDeliveryProof = async (req, res) => {
   try {
     const { id } = req.params
@@ -162,7 +162,7 @@ exports.uploadDeliveryProof = async (req, res) => {
   }
 }
 
-// POST /api/delivery/:id/collect — COD: mark cash collected
+// POST /api/delivery/:id/collect â COD: mark cash collected
 exports.collectPayment = async (req, res) => {
   try {
     const { id } = req.params
@@ -182,7 +182,7 @@ exports.collectPayment = async (req, res) => {
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
 
-// POST /api/delivery/:id/delivered — complete the delivery.
+// POST /api/delivery/:id/delivered â complete the delivery.
 // All-in-one: optional proof photo (multipart) + optional cashCollected flag.
 //  - Requires a delivery proof photo (either uploaded here, or already via /proof).
 //  - COD: cash must be collected (cashCollected flag here, or already via /collect).
@@ -200,12 +200,9 @@ exports.markDelivered = async (req, res) => {
     const o = ord.rows[0]
 
     if (o.status !== "Out For Delivery" && o.status !== "Completed")
-      return res.status(400).json({ message: "Confirm pickup first — order must be Out For Delivery." })
+      return res.status(400).json({ message: "Confirm pickup first â order must be Out For Delivery." })
 
-    // 0) GEOFENCE — verified server-side, re-checked at this exact moment.
-    // A live fix may be supplied in the body; it is written to
-    // delivery_partner_locations and read back before the distance is computed,
-    // so an earlier ping from the right place cannot satisfy this check.
+    // 0) GEOFENCE â verified server-side, re-checked at this exact moment.
     if (o.status !== "Completed") {
       const body0 = req.body || {}
       const arrival = await checkArrival(id, {
@@ -214,18 +211,14 @@ exports.markDelivered = async (req, res) => {
         partnerId: req.user.id,
       })
       if (!arrival.allowed) {
-        return res.status(403).json({
-          message: arrivalMessage(arrival),
-          geofence: arrival,
-        })
+        return res.status(403).json({ message: arrivalMessage(arrival), geofence: arrival })
       }
       if (arrival.distance_m != null) {
         await pool.query(
           `UPDATE orders SET delivered_distance_m=$1,
              arrived_at = COALESCE(arrived_at, NOW())
            WHERE id=$2`,
-          [arrival.distance_m, id]
-        )
+          [arrival.distance_m, id])
       }
     }
 
@@ -257,13 +250,13 @@ exports.markDelivered = async (req, res) => {
     await pool.query(
       `UPDATE orders
        SET status='Completed', delivery_photo=$1, payment_status=$2,
-           cash_collected = CASE WHEN $2='Collected' THEN true ELSE cash_collected END,
+           cash_collected = CASE WHEN $5::text='Collected' THEN true ELSE cash_collected END,
            delivered_at=NOW()
        WHERE id=$3 AND delivery_boy_id=$4`,
-      [proofUrl, paymentStatus, id, req.user.id]
+      [proofUrl, paymentStatus, id, req.user.id, paymentStatus]
     )
 
-    // ── Referral bonus: pay referrer on this customer's FIRST delivered order ──
+    // ââ Referral bonus: pay referrer on this customer's FIRST delivered order ââ
     try {
       const { walletTxn } = require("../../utils/wallet")
       const { getDeliverySettings } = require("../../utils/settings")
@@ -310,9 +303,7 @@ exports.markDelivered = async (req, res) => {
   }
 }
 
-// GET /api/delivery/:id/arrival — live geofence status for this partner's order.
-// The panel polls this to decide whether "Complete Delivery" is enabled.
-// Optional ?latitude=&longitude= records a fresh fix at the same time.
+// GET /api/delivery/:id/arrival â live geofence status for this partner's order.
 exports.arrivalStatus = async (req, res) => {
   try {
     const { id } = req.params
@@ -342,9 +333,7 @@ exports.arrivalStatus = async (req, res) => {
       radius_m: arrival.radius_m,
       enforced: arrival.enforced,
       reason: arrival.reason,
-      message: arrival.within
-        ? "Arrived at Delivery Location"
-        : arrivalMessage(arrival),
+      message: arrival.within ? "Arrived at Delivery Location" : arrivalMessage(arrival),
     })
   } catch (e) {
     console.log("arrivalStatus error:", e.message)

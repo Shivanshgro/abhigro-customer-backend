@@ -76,6 +76,8 @@ ensureMedicineSchema()
 // Ensure vendor + delivery partner onboarding tables/columns exist
 const ensurePartnerSchema = require("./src/config/partnerSchema")
 ensurePartnerSchema()
+const ensurePartnerPlatformSchema = require("./src/config/ensurePartnerPlatformSchema")
+ensurePartnerPlatformSchema()
 
 // MIDDLEWARE
 app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }))
@@ -115,6 +117,7 @@ app.use("/api/admin", require("./src/routes/adminMedicineRoutes"))
 // Public partner self-registration (vendor + delivery)
 app.use("/api/register", require("./src/routes/partnerRoutes"))
 app.use("/api/supplier", supplierRoutes)
+app.use("/api/partner", require("./src/routes/partnerPlatformRoutes"))
 app.use("/api/upload", uploadRoutes)
 // NOTE: profile endpoints are served at /api/auth/profile — no duplicate mount needed
 app.get("/api/search", searchProducts)

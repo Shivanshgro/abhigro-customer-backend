@@ -7,7 +7,7 @@ const updateAddress = require("../controllers/address/updateAddress")
 const pool = require("../config/db")
 
 router.post("/", auth, addAddress)
-router.get("/", auth, getAddress)           // was /:user_id — now uses token
+router.get("/", auth, getAddress)           // was /:user_id â now uses token
 router.put("/:id", auth, updateAddress)
 router.patch("/:id", auth, updateAddress)   // same handler, both verbs accepted
 
@@ -26,6 +26,7 @@ router.get("/:id", auth, async (req, res) => {
     res.status(500).json({ message: error.message })
   }
 })
+
 router.delete("/:id", auth, async (req, res) => {
   try {
     await pool.query(
