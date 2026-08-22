@@ -1,2 +1,0 @@
-RAZORPAY_KEY=rzp_test_xxxxxxxxx
-RAZORPAY_SECRET=xxxxxxxxxxxxx
