@@ -281,6 +281,15 @@ exports.markDelivered = async (req, res) => {
       }
     } catch (refErr) { console.log("referral payout skipped:", refErr.message) }
 
+    // ── Partner earnings ────────────────────────────────────────────────
+    // Side-ledger only. recordOrderEarning never throws and returns null on
+    // any failure, and partner_earnings.order_id is UNIQUE so a repeat call
+    // cannot double-pay. Delivery completion is unaffected either way.
+    try {
+      const { recordOrderEarning } = require("../../services/partnerEarnings")
+      await recordOrderEarning(id, req.user.id, "grocery")
+    } catch (earnErr) { console.log("partner earning skipped:", earnErr.message) }
+
     // Notify the customer
     try {
       const c = await pool.query(`SELECT user_id FROM orders WHERE id=$1`, [id])
