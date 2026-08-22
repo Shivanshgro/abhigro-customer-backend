@@ -16,7 +16,7 @@ const getQuote = async (req, res) => {
     if (!addr || addr.rows.length === 0) addr = await pool.query(`SELECT latitude, longitude FROM addresses WHERE user_id=$1 ORDER BY id DESC LIMIT 1`, [userId])
     if (addr.rows.length > 0) { cLat = addr.rows[0].latitude; cLng = addr.rows[0].longitude }
 
-    // Resolve shop coords (specific shop, else nearest active in flow — fallback any active)
+    // Resolve shop coords (specific shop, else fallback any active)
     let sLat = null, sLng = null
     let shop
     if (shop_id) shop = await pool.query(`SELECT latitude, longitude FROM shops WHERE id=$1`, [shop_id])
@@ -25,7 +25,7 @@ const getQuote = async (req, res) => {
 
     const settings = await getDeliverySettings()
     const d = distanceKm(sLat, sLng, cLat, cLng)
-    const e = etaMinutes(d)
+    const eta = etaMinutes(d)
 
     const total = Number(order_total || 0)
     const freeDelivery = settings.free_delivery_above_order > 0 && total >= settings.free_delivery_above_order
@@ -48,4 +48,5 @@ const getQuote = async (req, res) => {
     res.status(500).json({ message: e.message })
   }
 }
+
 module.exports = getQuote
