@@ -24,10 +24,31 @@ async function checkEligibility(mobile, role) {
   if (phone.length !== 10) return { ok: false, message: "Enter a valid 10-digit mobile number" }
 
   const u = await pool.query(`SELECT * FROM users WHERE phone=$1`, [phone])
+
   if (u.rows.length === 0) {
+    // A new CUSTOMER should not be asked to register after already proving
+    // the number by OTP. Create the account and let them shop. Partner roles
+    // still require a real registration, because they need documents and
+    // admin approval.
+    if (want === "customer") {
+      try {
+        const created = await pool.query(
+          `INSERT INTO users (name, phone, role)
+           VALUES ($1, $2, 'customer')
+           RETURNING *`,
+          [`User${phone.slice(-4)}`, phone])
+        return { ok: true, user: created.rows[0], created: true }
+      } catch (e) {
+        // Two devices racing on the same number: re-read rather than fail.
+        const again = await pool.query(`SELECT * FROM users WHERE phone=$1`, [phone])
+        if (again.rows.length > 0) return { ok: true, user: again.rows[0] }
+        return { ok: false, code: "not_registered", message: "Could not create your account. Please try again." }
+      }
+    }
     return { ok: false, code: "not_registered",
       message: `This mobile number is not registered as ${label}. Please register as ${label} first.` }
   }
+
   const user = u.rows[0]
 
   // Customer login is OPEN to any registered account (everyone can shop).
