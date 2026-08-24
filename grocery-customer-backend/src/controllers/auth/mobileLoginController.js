@@ -15,6 +15,18 @@ const mobileLogin = async (req, res) => {
       return res.status(400).json({ message: "Mobile and token are required" })
     }
 
+    // ── Store review account ──────────────────────────────────────────
+    // Google and Apple reviewers cannot receive an Indian SMS, so they need
+    // one account that signs in without a real OTP. Controlled by env so it
+    // can be switched off, and scoped to a single number that holds no real
+    // customer data.
+    const DEMO_PHONE = process.env.DEMO_LOGIN_PHONE || ""
+    const DEMO_TOKEN = process.env.DEMO_LOGIN_TOKEN || ""
+    const isDemo = DEMO_PHONE && DEMO_TOKEN &&
+      String(mobile).replace(/\D/g, "").slice(-10) === DEMO_PHONE &&
+      String(token) === DEMO_TOKEN
+
+    if (!isDemo) {
     // Verify OTP token with MSG91
     const verifyRes = await axios.post(
       "https://control.msg91.com/api/v5/widget/verifyAccessToken",
@@ -23,6 +35,7 @@ const mobileLogin = async (req, res) => {
     )
     if (!verifyRes.data || verifyRes.data.type !== "success") {
       return res.status(401).json({ message: "Invalid OTP. Please try again." })
+    }
     }
 
     // Enforce registration + selected role + approval
