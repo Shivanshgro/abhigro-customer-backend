@@ -84,7 +84,12 @@ const getTracking = async (req, res) => {
               o.vendor_latitude, o.vendor_longitude,
               o.estimated_delivery_time, o.assigned_shop_id, o.delivery_boy_id,
               o.picked_up_at, o.delivered_at, o.arrived_at,
-              o.total_amount, o.payment_method,
+              o.total_amount, o.payment_method, o.payment_status,
+              o.delivery_fee, o.discount, o.platform_fee,
+              o.delivery_slot, o.delivery_instructions,
+              o.packed_photo, o.delivery_photo, o.cash_collected,
+              o.cancel_reason, o.cancelled_at,
+              a.pincode AS customer_pincode,
               s.latitude AS shop_lat, s.longitude AS shop_lng,
               s.shop_name, s.address AS shop_address, s.phone AS shop_phone,
               u.name AS partner_name, u.phone AS partner_phone,
@@ -119,6 +124,31 @@ const getTracking = async (req, res) => {
         updated_at: L.updated_at,
         age_seconds: ageSec,
       }
+    }
+
+    // ── the bill ──
+    let items = [], itemTotal = 0
+    try {
+      const it = await pool.query(
+        `SELECT oi.id, oi.product_id, oi.quantity, oi.price,
+                p.name, p.image, p.unit
+         FROM order_items oi
+         LEFT JOIN products p ON p.id = oi.product_id
+         WHERE oi.order_id = $1
+         ORDER BY oi.id`, [id])
+      items = it.rows.map(x => ({
+        id: x.id,
+        product_id: x.product_id,
+        name: x.name || "Item",
+        image: x.image || null,
+        unit: x.unit || null,
+        quantity: Number(x.quantity || 0),
+        price: Number(x.price || 0),
+        line_total: Number(x.price || 0) * Number(x.quantity || 0),
+      }))
+      itemTotal = items.reduce((a, x) => a + x.line_total, 0)
+    } catch (e) {
+      console.log("getTracking items:", e.message)
     }
 
     const vLat = r.vendor_latitude ?? r.shop_lat
@@ -181,6 +211,22 @@ const getTracking = async (req, res) => {
       placed_at: r.created_at,
       total_amount: r.total_amount,
       payment_method: r.payment_method,
+      payment_status: r.payment_status,
+
+      // ── full order detail, so /orders/:id needs no second call ──
+      items,
+      item_total: itemTotal,
+      delivery_fee: r.delivery_fee != null ? Number(r.delivery_fee) : 0,
+      discount: r.discount != null ? Number(r.discount) : 0,
+      platform_fee: r.platform_fee != null ? Number(r.platform_fee) : 0,
+      delivery_slot: r.delivery_slot || null,
+      delivery_instructions: r.delivery_instructions || null,
+      customer_pincode: r.customer_pincode || null,
+      packed_photo: r.packed_photo || null,
+      delivery_photo: r.delivery_photo || null,
+      cash_collected: r.cash_collected ?? null,
+      cancel_reason: r.cancel_reason || null,
+      cancelled_at: r.cancelled_at || null,
       is_live: !!partnerLoc && !["delivered", "cancelled"].includes(stage),
     })
   } catch (e) {
