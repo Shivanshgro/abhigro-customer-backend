@@ -28,17 +28,26 @@ exports.updateInventory = async (req, res) => {
   try {
     const shop = await getMyShop(req.user.id)
     if (!shop) return res.status(403).json({ message: "No shop linked" })
-    const { product_id, available, stock_qty, price } = req.body
+    // A vendor may change how much they have and whether it is available.
+    // They may not add a product to the catalogue, and they may not set the
+    // price - both belong to AbhiGro so the catalogue stays consistent
+    // across every store. `price` in the body is deliberately ignored.
+    const { product_id, available, stock_qty } = req.body
     if (!product_id) return res.status(400).json({ message: "product_id required" })
 
     const result = await pool.query(
-      `INSERT INTO vendor_inventory (shop_id, product_id, available, stock_qty, price, updated_at)
-       VALUES ($1,$2,$3,$4,$5,NOW())
-       ON CONFLICT (shop_id, product_id)
-       DO UPDATE SET available=EXCLUDED.available, stock_qty=EXCLUDED.stock_qty,
-                     price=EXCLUDED.price, updated_at=NOW()
+      `UPDATE vendor_inventory
+       SET available = $3, stock_qty = $4, updated_at = NOW()
+       WHERE shop_id = $1 AND product_id = $2
        RETURNING *`,
-      [shop.id, product_id, available !== false, stock_qty || 0, price || null])
+      [shop.id, product_id, available !== false, Math.max(0, Number(stock_qty) || 0)])
+
+    if (result.rows.length === 0) {
+      return res.status(403).json({
+        message: "This product is not in your list. Ask the AbhiGro team to add it.",
+        needsRequest: true,
+      })
+    }
     res.json({ success: true, item: result.rows[0] })
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
@@ -52,18 +61,20 @@ exports.bulkUpdateInventory = async (req, res) => {
     const { items } = req.body  // [{product_id, available, stock_qty, price}]
     if (!Array.isArray(items)) return res.status(400).json({ message: "items array required" })
 
+    // Same rule as the single update: existing rows only, price untouched.
     await client.query("BEGIN")
+    let updated = 0, skipped = []
     for (const it of items) {
-      await client.query(
-        `INSERT INTO vendor_inventory (shop_id, product_id, available, stock_qty, price, updated_at)
-         VALUES ($1,$2,$3,$4,$5,NOW())
-         ON CONFLICT (shop_id, product_id)
-         DO UPDATE SET available=EXCLUDED.available, stock_qty=EXCLUDED.stock_qty,
-                       price=EXCLUDED.price, updated_at=NOW()`,
-        [shop.id, it.product_id, it.available !== false, it.stock_qty || 0, it.price || null])
+      const r = await client.query(
+        `UPDATE vendor_inventory
+         SET available = $3, stock_qty = $4, updated_at = NOW()
+         WHERE shop_id = $1 AND product_id = $2`,
+        [shop.id, it.product_id, it.available !== false, Math.max(0, Number(it.stock_qty) || 0)])
+      if (r.rowCount > 0) updated++
+      else skipped.push(it.product_id)
     }
     await client.query("COMMIT")
-    res.json({ success: true, updated: items.length })
+    res.json({ success: true, updated, skipped })
   } catch (e) {
     await client.query("ROLLBACK")
     res.status(500).json({ message: e.message })
