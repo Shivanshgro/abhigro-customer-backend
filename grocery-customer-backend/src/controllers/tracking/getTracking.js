@@ -83,10 +83,9 @@ const getTracking = async (req, res) => {
               o.customer_latitude, o.customer_longitude,
               o.vendor_latitude, o.vendor_longitude,
               o.estimated_delivery_time, o.assigned_shop_id, o.delivery_boy_id,
-              o.picked_up_at, o.delivered_at, o.arrived_at,
+              o.picked_up_at, o.delivered_at,
               o.total_amount, o.payment_method, o.payment_status,
-              o.delivery_fee, o.discount, o.platform_fee,
-              o.delivery_slot, o.delivery_instructions,
+              o.delivery_fee, o.delivery_slot,
               o.packed_photo, o.delivery_photo, o.cash_collected,
               o.cancel_reason, o.cancelled_at,
               a.pincode AS customer_pincode,
@@ -165,6 +164,11 @@ const getTracking = async (req, res) => {
       ? metres(distanceKm(partnerLoc.latitude, partnerLoc.longitude, Number(cLat), Number(cLng)))
       : null
 
+    const deliveryFee = r.delivery_fee != null ? Number(r.delivery_fee) : 0
+    const charged = r.total_amount != null ? Number(r.total_amount) : 0
+    const gap = (itemTotal + deliveryFee) - charged
+    const discount = gap > 0.5 ? Math.round(gap * 100) / 100 : 0
+
     const stage = deriveStage(r, partnerLoc, distToStoreM, distToCustM)
     const leg = ["rider_assigned", "rider_going_to_store", "rider_at_store"].includes(stage)
       ? "to_store" : "to_customer"
@@ -216,11 +220,13 @@ const getTracking = async (req, res) => {
       // ── full order detail, so /orders/:id needs no second call ──
       items,
       item_total: itemTotal,
-      delivery_fee: r.delivery_fee != null ? Number(r.delivery_fee) : 0,
-      discount: r.discount != null ? Number(r.discount) : 0,
-      platform_fee: r.platform_fee != null ? Number(r.platform_fee) : 0,
+      delivery_fee: deliveryFee,
+      // There is no discount column on orders. Any gap between what the
+      // lines add up to and what the customer was actually charged IS the
+      // discount, so derive it rather than inventing a column.
+      discount: discount,
+      platform_fee: 0,
       delivery_slot: r.delivery_slot || null,
-      delivery_instructions: r.delivery_instructions || null,
       customer_pincode: r.customer_pincode || null,
       packed_photo: r.packed_photo || null,
       delivery_photo: r.delivery_photo || null,
