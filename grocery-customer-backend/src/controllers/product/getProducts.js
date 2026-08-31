@@ -1,19 +1,19 @@
-const pool = require("../../config/db")
+﻿const pool = require("../../config/db")
 
 const getProducts = async (req, res) => {
   try {
-    const { category, region, limit = 100, page = 1 } = req.query
+    const { category, subcategory, region, limit = 100, page = 1 } = req.query
     const offset = (page - 1) * limit
 
     let queryText = `
-      SELECT products.*, categories.name AS category_name
+      SELECT products.*, categories.name AS category_name, subcategories.name AS subcategory_name
       FROM products
       LEFT JOIN categories ON products.category_id = categories.id
+      LEFT JOIN subcategories ON products.subcategory_id = subcategories.id
       WHERE products.is_active = true
     `
     const params = []
 
-    // Region filter: show 'all' products + products for the user's region
     if (region) {
       params.push(region)
       queryText += ` AND (products.region = 'all' OR products.region = $${params.length})`
@@ -22,6 +22,11 @@ const getProducts = async (req, res) => {
     if (category) {
       params.push(category)
       queryText += ` AND LOWER(categories.name) = LOWER($${params.length})`
+    }
+
+    if (subcategory) {
+      params.push(subcategory)
+      queryText += ` AND LOWER(subcategories.name) = LOWER($${params.length})`
     }
 
     params.push(limit, offset)
