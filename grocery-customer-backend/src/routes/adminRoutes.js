@@ -3,6 +3,7 @@ const router       = express.Router()
 const auth         = require("../middleware/authMiddleware")
 const admin        = require("../middleware/adminMiddleware")
 const dashboardStats = require("../controllers/admin/dashboardStats")
+const ops = require("../controllers/admin/opsController")
 const addProduct   = require("../controllers/admin/addProduct")
 const updateProduct = require("../controllers/admin/updateProduct")
 const deleteProduct = require("../controllers/admin/deleteProduct")
@@ -10,6 +11,13 @@ const pool         = require("../config/db")
 
 // Dashboard
 router.get("/dashboard", auth, admin, dashboardStats)
+
+// Command Center - read-only ops aggregation, plus onboarding approvals.
+router.get("/ops/live",      auth, admin, ops.getLive)
+router.get("/ops/incidents", auth, admin, ops.getIncidents)
+router.get("/ops/queue",     auth, admin, ops.getQueue)
+router.get("/ops/finance",   auth, admin, ops.getFinance)
+router.post("/ops/approve",  auth, admin, ops.approve)
 
 // ── Orders (for Admin dashboard) ──────────────────────────────────
 const adminOrders = require("../controllers/admin/adminOrders")
