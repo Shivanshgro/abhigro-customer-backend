@@ -18,6 +18,8 @@ router.get("/ops/incidents", auth, admin, ops.getIncidents)
 router.get("/ops/queue",     auth, admin, ops.getQueue)
 router.get("/ops/finance",   auth, admin, ops.getFinance)
 router.post("/ops/approve",  auth, admin, ops.approve)
+router.get("/ops/settings",  auth, admin, ops.getSettings)
+router.post("/ops/settings", auth, admin, ops.saveSettings)
 
 // ── Orders (for Admin dashboard) ──────────────────────────────────
 const adminOrders = require("../controllers/admin/adminOrders")

@@ -441,3 +441,60 @@ exports.approve = async (req, res) => {
     res.status(500).json({ message: e.message })
   }
 }
+
+/* ── GET /api/admin/ops/settings ──────────────────────────────────────
+   Platform rules live in app_settings so they can change without a deploy.
+   Everything is returned with its default, so a missing key shows the
+   value actually in force rather than a blank.                          */
+const SETTING_DEFAULTS = {
+  vendor_commission_pct:   "10",
+  pharmacy_commission_pct: "8",
+  restaurant_commission_pct: "18",
+  target_delivery_minutes: "25",
+  sla_alerts_enabled:      "1",
+  auto_reassign_enabled:   "1",
+  consolidation_wait_mins: "4",
+}
+
+exports.getSettings = async (req, res) => {
+  try {
+    const out = { ...SETTING_DEFAULTS }
+    try {
+      const q = await pool.query(
+        `SELECT key, value FROM app_settings WHERE key = ANY($1)`,
+        [Object.keys(SETTING_DEFAULTS)])
+      q.rows.forEach(r => { out[r.key] = r.value })
+    } catch (e) { console.log("ops settings read:", e.message) }
+    res.json({ success: true, settings: out, defaults: SETTING_DEFAULTS })
+  } catch (e) {
+    res.status(500).json({ message: e.message })
+  }
+}
+
+/* ── POST /api/admin/ops/settings ─────────────────────────────────────
+   Only the known keys can be written. An open key/value endpoint on an
+   admin route is a way to overwrite anything in app_settings by accident. */
+exports.saveSettings = async (req, res) => {
+  try {
+    const incoming = req.body || {}
+    const keys = Object.keys(incoming).filter(k => k in SETTING_DEFAULTS)
+    if (keys.length === 0) return res.status(400).json({ message: "Nothing to save" })
+
+    for (const k of keys) {
+      const v = String(incoming[k])
+      // Commission over 100% or a negative wait is a typo, not a policy.
+      if (/_pct$/.test(k) && (Number(v) < 0 || Number(v) > 100)) {
+        return res.status(400).json({ message: `${k} must be between 0 and 100` })
+      }
+      await pool.query(
+        `INSERT INTO app_settings (key, value) VALUES ($1,$2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [k, v])
+    }
+
+    console.log(`[Ops] ${req.user?.id} changed settings: ${keys.join(", ")}`)
+    res.json({ success: true, saved: keys })
+  } catch (e) {
+    console.log("ops settings save:", e.message)
+    res.status(500).json({ message: e.message })
+  }
+}
