@@ -136,3 +136,125 @@ exports.markPacked = async (req, res) => {
     res.json({ success: true })
   } catch (e) { res.status(500).json({ message: e.message }) }
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/pharmacy/sales?days=7
+// Aggregation over medicine_orders. The per-order commission columns are
+// already populated, so they are summed rather than recalculated - the
+// settlement must agree with the invoice the pharmacy already issued.
+// ─────────────────────────────────────────────────────────────────────────
+exports.getSales = async (req, res) => {
+  try {
+    const days = Math.min(90, Math.max(1, Number(req.query.days) || 7))
+
+    const daily = await pool.query(
+      `SELECT DATE(COALESCE(updated_at, created_at)) AS day,
+              COUNT(*)::int                                            AS orders,
+              COUNT(*) FILTER (WHERE order_status = 'delivered')::int   AS delivered,
+              COUNT(*) FILTER (WHERE order_status LIKE '%reject%')::int AS rejected,
+              COALESCE(SUM(total_medicine_amount)
+                       FILTER (WHERE order_status = 'delivered'), 0)    AS goods,
+              COALESCE(SUM(pharmacy_commission_amount)
+                       FILTER (WHERE order_status = 'delivered'), 0)    AS commission,
+              COALESCE(SUM(pharmacy_settlement_amount)
+                       FILTER (WHERE order_status = 'delivered'), 0)    AS settlement
+       FROM medicine_orders
+       WHERE pharmacy_id = $1
+         AND COALESCE(updated_at, created_at) >= NOW() - ($2 || ' days')::interval
+       GROUP BY DATE(COALESCE(updated_at, created_at))
+       ORDER BY day DESC`,
+      [req.pharmacy.id, String(days)])
+
+    const rows = daily.rows.map(r => ({
+      day: r.day,
+      orders: r.orders,
+      delivered: r.delivered,
+      rejected: r.rejected,
+      sales: Number(r.goods || 0),
+      commission: Number(r.commission || 0),
+      payout: Number(r.settlement || 0),
+    }))
+
+    const tot = rows.reduce((a, r) => ({
+      orders: a.orders + r.orders, delivered: a.delivered + r.delivered,
+      rejected: a.rejected + r.rejected, sales: a.sales + r.sales,
+      commission: a.commission + r.commission, payout: a.payout + r.payout,
+    }), { orders: 0, delivered: 0, rejected: 0, sales: 0, commission: 0, payout: 0 })
+
+    // Verification speed is the pharmacy's own performance metric, and the
+    // one thing they can actually improve.
+    let avgVerifyMin = null
+    try {
+      const v = await pool.query(
+        `SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))/60) AS m
+         FROM medicine_orders
+         WHERE pharmacy_id = $1
+           AND order_status NOT IN ('medicine_order_placed','prescription_uploaded')
+           AND created_at >= NOW() - ($2 || ' days')::interval`,
+        [req.pharmacy.id, String(days)])
+      if (v.rows[0]?.m != null) avgVerifyMin = Math.round(Number(v.rows[0].m))
+    } catch (e) { /* optional */ }
+
+    let top = []
+    try {
+      const t = await pool.query(
+        `SELECT i.medicine_name AS name, SUM(i.quantity)::int AS qty,
+                COALESCE(SUM(i.price * i.quantity), 0) AS value
+         FROM medicine_order_items i
+         JOIN medicine_orders o ON o.id = i.order_id
+         WHERE o.pharmacy_id = $1 AND o.order_status = 'delivered'
+           AND o.created_at >= NOW() - ($2 || ' days')::interval
+         GROUP BY i.medicine_name ORDER BY qty DESC LIMIT 8`,
+        [req.pharmacy.id, String(days)])
+      top = t.rows.map(x => ({ name: x.name, qty: x.qty, value: Number(x.value || 0) }))
+    } catch (e) { console.log("pharmacy top:", e.message) }
+
+    const r2 = (n) => Math.round(n * 100) / 100
+    res.json({
+      success: true, days,
+      totals: {
+        ...tot, sales: r2(tot.sales), commission: r2(tot.commission), payout: r2(tot.payout),
+        avg_basket: tot.delivered ? Math.round(tot.sales / tot.delivered) : 0,
+        avg_verify_minutes: avgVerifyMin,
+      },
+      daily: rows, top_products: top,
+    })
+  } catch (e) {
+    console.log("pharmacy getSales:", e.message)
+    res.status(500).json({ message: e.message })
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/pharmacy/payouts — same settlement engine as grocery shops.
+// ─────────────────────────────────────────────────────────────────────────
+exports.getPayouts = async (req, res) => {
+  try {
+    const { currentPeriod } = require("../../services/merchantPayouts")
+
+    let current = null
+    try {
+      current = await currentPeriod({ merchantType: "pharmacy", merchantId: req.pharmacy.id })
+    } catch (e) { console.log("pharmacy current period:", e.message) }
+
+    let payouts = []
+    try {
+      const r = await pool.query(
+        `SELECT * FROM merchant_payouts
+         WHERE merchant_type = 'pharmacy' AND merchant_id = $1
+         ORDER BY period_start DESC LIMIT 26`, [req.pharmacy.id])
+      payouts = r.rows
+    } catch (e) { console.log("pharmacy payouts:", e.message) }
+
+    const unpaid = payouts.filter(p => p.status !== "paid")
+      .reduce((a, p) => a + Number(p.net_amount || 0), 0)
+
+    res.json({
+      success: true, current, payouts,
+      unpaid: Math.round(unpaid * 100) / 100,
+    })
+  } catch (e) {
+    console.log("pharmacy getPayouts:", e.message)
+    res.status(500).json({ message: e.message })
+  }
+}

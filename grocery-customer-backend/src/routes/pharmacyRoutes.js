@@ -7,6 +7,10 @@ const p = require("../controllers/medicine/pharmacyController")
 
 router.use(auth, pharmacyOnly)
 
+// Business screens. Above /orders/:id so "sales" is never read as an id.
+router.get("/sales",   p.getSales)
+router.get("/payouts", p.getPayouts)
+
 router.get("/orders", p.listOrders)
 router.get("/orders/:id", p.getOrder)
 router.put("/orders/:id/approve-prescription", p.approvePrescription)
