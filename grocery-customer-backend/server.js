@@ -115,6 +115,11 @@ ensurePartnerSchema()
 const ensurePartnerPlatformSchema = require("./src/config/ensurePartnerPlatformSchema")
 ensurePartnerPlatformSchema()
 
+// Merchant settlements - grocery shops and pharmacies. Guarded because a
+// missing table here must never stop the app from taking orders.
+try { require("./src/config/ensureMerchantPayoutSchema")() }
+catch (e) { console.log("WARN ensureMerchantPayoutSchema:", e.message) }
+
 // MIDDLEWARE
 app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }))
 app.use(compression())
@@ -191,6 +196,9 @@ server.listen(PORT, () => {
 // Start hourly stock sync job
 require("./src/jobs/stockSyncJob")
 require("./src/jobs/dailyResetJob")
+// Weekly merchant settlement, Monday 02:00 IST.
+try { require("./src/jobs/merchantPayoutJob")() }
+catch (e) { console.log("WARN merchantPayoutJob:", e.message) }
 // panel notifications schema (fail-safe)
 try { require('./src/config/ensureNotifySchema')() } catch (e) { console.log('WARN ensureNotifySchema:', e.message) }
 

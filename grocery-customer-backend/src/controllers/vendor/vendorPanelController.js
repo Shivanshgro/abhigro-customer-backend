@@ -213,3 +213,228 @@ exports.uploadPackedPhoto = async (req, res) => {
     res.status(500).json({ message: e.message })
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/vendor/sales?days=7 — what the shop sold, day by day.
+// Pure aggregation over orders that already exist. No new tables.
+// ─────────────────────────────────────────────────────────────────────────
+exports.getSales = async (req, res) => {
+  try {
+    const shop = await getMyShop(req.user.id)
+    if (!shop) return res.status(403).json({ message: "No shop linked" })
+
+    const days = Math.min(90, Math.max(1, Number(req.query.days) || 7))
+
+    // Commission is read from settings so finance can change it without a
+    // deploy, and falls back to a sane default if unset.
+    let commissionPct = 10
+    try {
+      const c = await pool.query(`SELECT value FROM app_settings WHERE key='vendor_commission_pct'`)
+      if (c.rows[0]) commissionPct = Number(c.rows[0].value) || commissionPct
+    } catch (e) { /* default */ }
+
+    const daily = await pool.query(
+      `SELECT DATE(created_at) AS day,
+              COUNT(*)::int                                        AS orders,
+              COUNT(*) FILTER (WHERE status = 'Completed')::int    AS delivered,
+              COUNT(*) FILTER (WHERE status ILIKE '%cancel%')::int AS cancelled,
+              COALESCE(SUM(total_amount) FILTER (WHERE status = 'Completed'), 0) AS sales
+       FROM orders
+       WHERE assigned_shop_id = $1
+         AND created_at >= NOW() - ($2 || ' days')::interval
+       GROUP BY DATE(created_at)
+       ORDER BY day DESC`,
+      [shop.id, String(days)])
+
+    const rows = daily.rows.map(r => {
+      const sales = Number(r.sales || 0)
+      const commission = Math.round(sales * commissionPct) / 100
+      return {
+        day: r.day,
+        orders: r.orders,
+        delivered: r.delivered,
+        cancelled: r.cancelled,
+        sales,
+        commission,
+        payout: Math.round((sales - commission) * 100) / 100,
+      }
+    })
+
+    const tot = rows.reduce((a, r) => ({
+      orders: a.orders + r.orders,
+      delivered: a.delivered + r.delivered,
+      cancelled: a.cancelled + r.cancelled,
+      sales: a.sales + r.sales,
+      commission: a.commission + r.commission,
+      payout: a.payout + r.payout,
+    }), { orders: 0, delivered: 0, cancelled: 0, sales: 0, commission: 0, payout: 0 })
+
+    // Top sellers over the same window.
+    let top = []
+    try {
+      const t = await pool.query(
+        `SELECT p.name, SUM(oi.quantity)::int AS qty,
+                COALESCE(SUM(oi.price * oi.quantity), 0) AS value
+         FROM order_items oi
+         JOIN orders o   ON o.id = oi.order_id
+         JOIN products p ON p.id = oi.product_id
+         WHERE o.assigned_shop_id = $1
+           AND o.status = 'Completed'
+           AND o.created_at >= NOW() - ($2 || ' days')::interval
+         GROUP BY p.name ORDER BY qty DESC LIMIT 8`,
+        [shop.id, String(days)])
+      top = t.rows.map(x => ({ name: x.name, qty: x.qty, value: Number(x.value || 0) }))
+    } catch (e) { console.log("vendor sales top:", e.message) }
+
+    res.json({
+      success: true, days, commission_pct: commissionPct,
+      totals: {
+        ...tot,
+        sales: Math.round(tot.sales * 100) / 100,
+        commission: Math.round(tot.commission * 100) / 100,
+        payout: Math.round(tot.payout * 100) / 100,
+        avg_basket: tot.delivered ? Math.round(tot.sales / tot.delivered) : 0,
+      },
+      daily: rows, top_products: top,
+    })
+  } catch (e) {
+    console.log("getSales error:", e.message)
+    res.status(500).json({ message: e.message })
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/vendor/ratings — what customers said about this shop.
+//
+// Two sources, because customers rate two different things:
+//   order_ratings   target='vendor'  -> the shop itself
+//   product_reviews                  -> individual products
+// Delivery ratings are deliberately NOT included: a slow rider is not the
+// shop's fault and counting it against them would be unfair.
+// ─────────────────────────────────────────────────────────────────────────
+exports.getRatings = async (req, res) => {
+  try {
+    const shop = await getMyShop(req.user.id)
+    if (!shop) return res.status(403).json({ message: "No shop linked" })
+
+    let shopAvg = null, shopCount = 0, recent = []
+    try {
+      const r = await pool.query(
+        `SELECT ROUND(AVG(r.stars)::numeric, 1) AS avg, COUNT(*)::int AS n
+         FROM order_ratings r
+         JOIN orders o ON o.id = r.order_id
+         WHERE o.assigned_shop_id = $1 AND r.target = 'vendor'`, [shop.id])
+      shopAvg = r.rows[0]?.avg != null ? Number(r.rows[0].avg) : null
+      shopCount = r.rows[0]?.n || 0
+
+      const rec = await pool.query(
+        `SELECT r.stars, r.feedback, r.created_at, r.order_id, u.name AS customer
+         FROM order_ratings r
+         JOIN orders o ON o.id = r.order_id
+         LEFT JOIN users u ON u.id = r.user_id
+         WHERE o.assigned_shop_id = $1 AND r.target = 'vendor'
+         ORDER BY r.created_at DESC LIMIT 20`, [shop.id])
+      recent = rec.rows
+    } catch (e) { console.log("vendor ratings shop:", e.message) }
+
+    let productAvg = null, productCount = 0, products = []
+    try {
+      const p = await pool.query(
+        `SELECT ROUND(AVG(pr.rating)::numeric, 1) AS avg, COUNT(*)::int AS n
+         FROM product_reviews pr
+         JOIN orders o ON o.id = pr.order_id
+         WHERE o.assigned_shop_id = $1`, [shop.id])
+      productAvg = p.rows[0]?.avg != null ? Number(p.rows[0].avg) : null
+      productCount = p.rows[0]?.n || 0
+
+      const pl = await pool.query(
+        `SELECT pd.name, ROUND(AVG(pr.rating)::numeric, 1) AS avg, COUNT(*)::int AS n
+         FROM product_reviews pr
+         JOIN orders o    ON o.id = pr.order_id
+         JOIN products pd ON pd.id = pr.product_id
+         WHERE o.assigned_shop_id = $1
+         GROUP BY pd.name ORDER BY AVG(pr.rating) ASC LIMIT 10`, [shop.id])
+      products = pl.rows.map(x => ({ name: x.name, avg: Number(x.avg), count: x.n }))
+    } catch (e) { console.log("vendor ratings products:", e.message) }
+
+    res.json({
+      success: true,
+      shop_rating: shopAvg, shop_reviews: shopCount,
+      product_rating: productAvg, product_reviews: productCount,
+      recent, products,
+    })
+  } catch (e) {
+    console.log("getRatings error:", e.message)
+    res.status(500).json({ message: e.message })
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/vendor/payouts — settlements, plus what is building right now.
+//
+// The current period matters more than the history: a shop owner asks
+// "what am I owed" far more often than "what did you pay me in June".
+// ─────────────────────────────────────────────────────────────────────────
+exports.getPayouts = async (req, res) => {
+  try {
+    const shop = await getMyShop(req.user.id)
+    if (!shop) return res.status(403).json({ message: "No shop linked" })
+
+    const { currentPeriod } = require("../../services/merchantPayouts")
+
+    let current = null
+    try {
+      current = await currentPeriod({ merchantType: "shop", merchantId: shop.id })
+    } catch (e) { console.log("vendor current period:", e.message) }
+
+    let payouts = []
+    try {
+      const r = await pool.query(
+        `SELECT * FROM merchant_payouts
+         WHERE merchant_type = 'shop' AND merchant_id = $1
+         ORDER BY period_start DESC LIMIT 26`, [shop.id])
+      payouts = r.rows
+    } catch (e) { console.log("vendor payouts:", e.message) }
+
+    const unpaid = payouts
+      .filter(p => p.status !== "paid")
+      .reduce((a, p) => a + Number(p.net_amount || 0), 0)
+
+    res.json({
+      success: true,
+      current,
+      payouts,
+      unpaid: Math.round(unpaid * 100) / 100,
+      bank: shop.bank_account_details || null,
+    })
+  } catch (e) {
+    console.log("getPayouts error:", e.message)
+    res.status(500).json({ message: e.message })
+  }
+}
+
+// GET /api/vendor/payouts/:id — the orders behind one settlement.
+exports.getPayoutDetail = async (req, res) => {
+  try {
+    const shop = await getMyShop(req.user.id)
+    if (!shop) return res.status(403).json({ message: "No shop linked" })
+
+    const p = await pool.query(
+      `SELECT * FROM merchant_payouts
+       WHERE id = $1 AND merchant_type = 'shop' AND merchant_id = $2`,
+      [req.params.id, shop.id])
+    if (p.rows.length === 0) return res.status(404).json({ message: "Not found" })
+
+    const lines = await pool.query(
+      `SELECT m.order_id, m.gross, m.commission, m.net,
+              o.created_at, o.delivered_at
+       FROM merchant_payout_orders m
+       LEFT JOIN orders o ON o.id = m.order_id
+       WHERE m.payout_id = $1 AND m.order_type = 'grocery'
+       ORDER BY m.order_id`, [req.params.id])
+
+    res.json({ success: true, payout: p.rows[0], orders: lines.rows })
+  } catch (e) {
+    res.status(500).json({ message: e.message })
+  }
+}

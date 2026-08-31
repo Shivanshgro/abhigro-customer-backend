@@ -13,4 +13,10 @@ router.get("/orders",           auth, v.myOrders)
 router.post("/orders/:id/fulfilled", auth, v.markFulfilled)
 router.post("/orders/:id/packed-photo", auth, upload.any(), v.uploadPackedPhoto)
 
+// Business screens
+router.get("/sales",   auth, v.getSales)
+router.get("/ratings", auth, v.getRatings)
+router.get("/payouts",     auth, v.getPayouts)
+router.get("/payouts/:id", auth, v.getPayoutDetail)
+
 module.exports = router
