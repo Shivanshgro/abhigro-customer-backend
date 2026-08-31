@@ -148,6 +148,30 @@ exports.getLive = async (req, res) => {
       return q.rows.map(x => ({ day: x.day, orders: x.orders, gmv: r2(x.gmv) }))
     }, [])
 
+    // ── share by vertical ──
+    out.verticals = await safe(async () => {
+      const g = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM orders WHERE created_at::date = CURRENT_DATE`)
+      let m = 0, f = 0
+      try {
+        const r = await pool.query(
+          `SELECT COUNT(*)::int AS c FROM medicine_orders WHERE created_at::date = CURRENT_DATE`)
+        m = r.rows[0].c
+      } catch (e) { /* vertical not live */ }
+      try {
+        const r = await pool.query(
+          `SELECT COUNT(*)::int AS c FROM food_orders WHERE created_at::date = CURRENT_DATE`)
+        f = r.rows[0].c
+      } catch (e) { /* vertical not live */ }
+      const total = g.rows[0].c + m + f
+      const pct = (x) => total ? Math.round((x / total) * 100) : 0
+      return [
+        { name: "Grocery",  orders: g.rows[0].c, pct: pct(g.rows[0].c) },
+        { name: "Pharmacy", orders: m,           pct: pct(m) },
+        { name: "Restaurant", orders: f,         pct: pct(f) },
+      ]
+    }, [])
+
     // ── medicine, if the vertical is live ──
     out.medicine = await safe(async () => {
       const q = await pool.query(
@@ -172,7 +196,9 @@ exports.getLive = async (req, res) => {
 exports.getIncidents = async (req, res) => {
   const items = []
 
-  // Late deliveries still in flight.
+  // Late deliveries still in flight TODAY. An order stuck since last week
+  // is abandoned data, not something anyone can act on now - listing it as
+  // HIGH just teaches the operator to ignore the whole screen.
   await safe(async () => {
     const q = await pool.query(
       `SELECT o.id, o.pincode, o.total_amount, o.created_at, u.name AS rider, u.phone,
@@ -180,8 +206,9 @@ exports.getIncidents = async (req, res) => {
        FROM orders o
        LEFT JOIN users u ON u.id = o.delivery_boy_id
        WHERE o.status NOT IN ('Completed','Cancelled')
+         AND o.created_at > NOW() - INTERVAL '24 hours'
          AND o.created_at < NOW() - ($1 || ' minutes')::interval
-       ORDER BY o.created_at LIMIT 20`, [String(SLA_MINUTES)])
+       ORDER BY o.created_at DESC LIMIT 20`, [String(SLA_MINUTES)])
     q.rows.forEach(o => items.push({
       severity: o.mins > SLA_MINUTES * 2 ? "high" : "medium",
       type: "SLA breach",
@@ -197,8 +224,9 @@ exports.getIncidents = async (req, res) => {
               ROUND(EXTRACT(EPOCH FROM (NOW() - created_at))/60)::int AS mins
        FROM orders
        WHERE status = 'Packed' AND delivery_boy_id IS NULL
+         AND created_at > NOW() - INTERVAL '24 hours'
          AND created_at < NOW() - INTERVAL '15 minutes'
-       ORDER BY created_at LIMIT 10`)
+       ORDER BY created_at DESC LIMIT 10`)
     q.rows.forEach(o => items.push({
       severity: "high", type: "No rider assigned",
       detail: `#${o.id} · packed ${o.mins} min ago · ${o.pincode || ""}`,
@@ -245,13 +273,28 @@ exports.getIncidents = async (req, res) => {
               ROUND(EXTRACT(EPOCH FROM (NOW() - created_at))/60)::int AS mins
        FROM medicine_orders
        WHERE order_status IN ('prescription_uploaded','pending')
+         AND created_at > NOW() - INTERVAL '24 hours'
          AND created_at < NOW() - INTERVAL '30 minutes'
-       ORDER BY created_at LIMIT 10`)
+       ORDER BY created_at DESC LIMIT 10`)
     q.rows.forEach(o => items.push({
       severity: "high", type: "Prescription unverified",
       detail: `#${o.id} · waiting ${o.mins} min`,
       order_id: o.id, at: o.created_at,
     }))
+  }, null)
+
+  // Old abandoned orders reported once as a single low-priority line, so
+  // they can be cleaned up without drowning today's real problems.
+  await safe(async () => {
+    const q = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM orders
+       WHERE status NOT IN ('Completed','Cancelled')
+         AND created_at < NOW() - INTERVAL '24 hours'`)
+    if (q.rows[0].c > 0) items.push({
+      severity: "low", type: "Stale orders",
+      detail: `${q.rows[0].c} orders older than a day never completed — worth cancelling`,
+      at: new Date(),
+    })
   }, null)
 
   const rank = { high: 0, medium: 1, low: 2 }
