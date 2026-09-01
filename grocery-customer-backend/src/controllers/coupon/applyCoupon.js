@@ -1,4 +1,4 @@
-const pool = require("../../config/db")
+﻿const pool = require("../../config/db")
 
 const applyCoupon = async (req, res) => {
   try {
@@ -10,12 +10,17 @@ const applyCoupon = async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT * FROM coupons WHERE UPPER(code)=UPPER($1) AND active=true`,
+      `SELECT *
+       FROM coupons
+       WHERE UPPER(code) = UPPER($1)
+         AND active = true`,
       [code]
     )
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: "Invalid or expired coupon" })
+      return res.status(404).json({
+        message: "Invalid or expired coupon"
+      })
     }
 
     const coupon = result.rows[0]
@@ -23,13 +28,19 @@ const applyCoupon = async (req, res) => {
     res.json({
       success: true,
       coupon: coupon.code,
-      discount: coupon.discount_amount || coupon.discount || 0,
-      discountPercent: coupon.discount_percent || 0,
-      minOrder: coupon.min_order_amount || 0,
+      discount: Number(coupon.discount_flat || 0),
+      discountPercent: Number(coupon.discount_percent || 0),
+      minOrder: Number(coupon.min_order_amount || 0),
+      maxDiscount: coupon.max_discount !== null
+        ? Number(coupon.max_discount)
+        : null
     })
   } catch (error) {
     console.log(error)
-    res.status(500).json({ message: error.message })
+
+    res.status(500).json({
+      message: error.message
+    })
   }
 }
 
