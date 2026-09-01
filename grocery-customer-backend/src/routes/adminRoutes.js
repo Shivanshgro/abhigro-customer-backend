@@ -21,6 +21,10 @@ router.post("/ops/approve",  auth, admin, ops.approve)
 router.get("/ops/settings",  auth, admin, ops.getSettings)
 router.post("/ops/settings", auth, admin, ops.saveSettings)
 
+// Dark store coverage: which localities a store serves.
+router.get("/ops/shops/:id/coverage",  auth, admin, ops.previewCoverage)
+router.post("/ops/shops/:id/coverage", auth, admin, ops.applyCoverage)
+
 // ── Orders (for Admin dashboard) ──────────────────────────────────
 const adminOrders = require("../controllers/admin/adminOrders")
 router.get("/orders", auth, admin, adminOrders.listOrders)

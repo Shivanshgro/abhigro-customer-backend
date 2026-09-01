@@ -498,3 +498,36 @@ exports.saveSettings = async (req, res) => {
     res.status(500).json({ message: e.message })
   }
 }
+
+/* ── Dark store coverage ──────────────────────────────────────────────
+   GET  /api/admin/ops/shops/:id/coverage        preview, writes nothing
+   POST /api/admin/ops/shops/:id/coverage        map the localities
+
+   Onboarding a dark store becomes: set its location and radius, look at
+   the preview, then map. No SQL.                                        */
+exports.previewCoverage = async (req, res) => {
+  try {
+    const { previewCoverage } = require("../../services/darkStoreCoverage")
+    const out = await previewCoverage(req.params.id, req.query.radius)
+    if (out.error) return res.status(400).json({ success: false, message: out.error })
+    res.json({ success: true, ...out })
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message })
+  }
+}
+
+exports.applyCoverage = async (req, res) => {
+  try {
+    const { mapCoverage } = require("../../services/darkStoreCoverage")
+    const out = await mapCoverage(req.params.id, {
+      radius: req.body?.radius,
+      // Taking a locality from another store is deliberate, never a default.
+      takeover: req.body?.takeover === true,
+    })
+    if (out.error) return res.status(400).json({ success: false, message: out.error })
+    console.log(`[Ops] ${req.user?.id} mapped coverage for shop ${req.params.id}`)
+    res.json({ success: true, ...out })
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message })
+  }
+}
