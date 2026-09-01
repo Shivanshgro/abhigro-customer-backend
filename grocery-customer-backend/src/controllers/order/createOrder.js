@@ -91,7 +91,14 @@ const createOrder = async (req, res) => {
       // coordinates. Without it, only the old pincode matching runs.
       assignment = await autoAssignOrder(orderId, pincode, items, finalAddrId)
     } catch (e) {
-      console.log("Auto-assign error:", e.message)
+      // Leaving the row at 'pending' makes a crashed assignment look
+      // identical to one that never ran. Mark it so it shows up in the
+      // ops console and can be reassigned.
+      console.log("Auto-assign error on order", orderId, ":", e.message)
+      try {
+        await pool.query(
+          `UPDATE orders SET assignment_status='unfulfilled' WHERE id=$1`, [orderId])
+      } catch (e2) { console.log("could not mark unfulfilled:", e2.message) }
     }
 
     // Notify admin dashboard live (socket only — free, no WhatsApp)

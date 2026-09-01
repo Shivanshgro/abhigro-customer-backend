@@ -50,7 +50,7 @@ async function byLocality(localityId, productIds) {
        AND ${SHOP_FILTER}
      GROUP BY s.id, s.priority_score
      HAVING COUNT(DISTINCT vi.product_id) = $3
-     ORDER BY lpv.priority ASC, s.priority_score DESC, approx_price ASC
+     ORDER BY MIN(lpv.priority) ASC, s.priority_score DESC, approx_price ASC
      LIMIT 1`,
     [localityId, productIds, productIds.length])
   return r.rows[0] || null
