@@ -20,10 +20,13 @@ const mobileLogin = async (req, res) => {
     // one account that signs in without a real OTP. Controlled by env so it
     // can be switched off, and scoped to a single number that holds no real
     // customer data.
-    const DEMO_PHONE = process.env.DEMO_LOGIN_PHONE || ""
+    // Comma-separated, so each app under review has its own account and
+    // neither has to change role while the other is being reviewed.
+    const DEMO_PHONES = String(process.env.DEMO_LOGIN_PHONE || "")
+      .split(",").map(x => x.trim()).filter(Boolean)
     const DEMO_TOKEN = process.env.DEMO_LOGIN_TOKEN || ""
-    const isDemo = DEMO_PHONE && DEMO_TOKEN &&
-      String(mobile).replace(/\D/g, "").slice(-10) === DEMO_PHONE &&
+    const isDemo = DEMO_PHONES.length > 0 && DEMO_TOKEN &&
+      DEMO_PHONES.includes(String(mobile).replace(/\D/g, "").slice(-10)) &&
       String(token) === DEMO_TOKEN
 
     if (!isDemo) {

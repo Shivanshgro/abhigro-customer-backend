@@ -23,7 +23,9 @@ exports.sendOtp = async (req, res) => {
     if (!m.valid) return res.status(400).json({ message: "Enter a valid 10-digit mobile number" })
 
     // The review account never receives a real SMS, so do not spend one.
-    if (process.env.DEMO_LOGIN_PHONE && m.last10 === process.env.DEMO_LOGIN_PHONE) {
+    const demoList = String(process.env.DEMO_LOGIN_PHONE || "")
+      .split(",").map(x => x.trim()).filter(Boolean)
+    if (demoList.includes(m.last10)) {
       return res.json({ success: true, message: "OTP sent" })
     }
 
@@ -84,10 +86,15 @@ exports.verifyOtp = async (req, res) => {
     // Google and Apple reviewers cannot receive an Indian SMS. Scoped to a
     // single number and controlled by env, so it can be switched off after
     // review without a deploy.
-    const DEMO_PHONE = process.env.DEMO_LOGIN_PHONE || ""
+    // DEMO_LOGIN_PHONE takes one number or several, comma separated:
+    //   9999900000,9999900001
+    // Google and Apple review different apps at the same time, and a single
+    // shared account would have to keep changing role mid-review.
+    const DEMO_PHONES = String(process.env.DEMO_LOGIN_PHONE || "")
+      .split(",").map(x => x.trim()).filter(Boolean)
     const DEMO_TOKEN = process.env.DEMO_LOGIN_TOKEN || ""
-    const isDemo = DEMO_PHONE && DEMO_TOKEN &&
-      m.last10 === DEMO_PHONE && String(otp).trim() === DEMO_TOKEN
+    const isDemo = DEMO_PHONES.length > 0 && DEMO_TOKEN &&
+      DEMO_PHONES.includes(m.last10) && String(otp).trim() === DEMO_TOKEN
 
     if (!isDemo) {
       const verify = await axios.get("https://control.msg91.com/api/v5/otp/verify", {
