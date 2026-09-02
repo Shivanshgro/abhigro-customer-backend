@@ -1,6 +1,7 @@
 const pool = require("../../config/db")
 const jwt = require("jsonwebtoken")
 const axios = require("axios")
+const { checkEligibility } = require("../../services/roleEligibility")
 
 const JWT_SECRET = process.env.JWT_SECRET || "grocery_secret"
 const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY
@@ -21,8 +22,17 @@ exports.sendOtp = async (req, res) => {
     const m = normalizeMobile(mobile)
     if (!m.valid) return res.status(400).json({ message: "Enter a valid 10-digit mobile number" })
 
+    // The review account never receives a real SMS, so do not spend one.
+    if (process.env.DEMO_LOGIN_PHONE && m.last10 === process.env.DEMO_LOGIN_PHONE) {
+      return res.json({ success: true, message: "OTP sent" })
+    }
+
     if (!MSG91_AUTH_KEY || !MSG91_OTP_TEMPLATE_ID) {
-      return res.status(500).json({ message: "OTP service not configured. Set MSG91_AUTH_KEY and MSG91_OTP_TEMPLATE_ID." })
+      // Name the missing variable in the log, not to the customer - a
+      // config gap is not something they can act on.
+      console.log("OTP not configured. AUTH_KEY set:", !!MSG91_AUTH_KEY,
+                  "TEMPLATE_ID set:", !!MSG91_OTP_TEMPLATE_ID)
+      return res.status(503).json({ message: "OTP service is unavailable right now. Please try again shortly." })
     }
 
     const r = await axios.post(
@@ -65,18 +75,59 @@ exports.resendOtp = async (req, res) => {
 // Verifies with MSG91, then logs in / auto-registers and returns JWT.
 exports.verifyOtp = async (req, res) => {
   try {
-    const { mobile, otp } = req.body || {}
+    const { mobile, otp, role } = req.body || {}
     const m = normalizeMobile(mobile)
     if (!m.valid) return res.status(400).json({ message: "Enter a valid 10-digit mobile number" })
     if (!otp || String(otp).trim().length < 4) return res.status(400).json({ message: "Enter the OTP" })
 
-    const verify = await axios.get("https://control.msg91.com/api/v5/otp/verify", {
-      params: { otp: String(otp).trim(), mobile: m.msg91 },
-      headers: { authkey: MSG91_AUTH_KEY },
-    })
+    // ── Store review account ────────────────────────────────────────────
+    // Google and Apple reviewers cannot receive an Indian SMS. Scoped to a
+    // single number and controlled by env, so it can be switched off after
+    // review without a deploy.
+    const DEMO_PHONE = process.env.DEMO_LOGIN_PHONE || ""
+    const DEMO_TOKEN = process.env.DEMO_LOGIN_TOKEN || ""
+    const isDemo = DEMO_PHONE && DEMO_TOKEN &&
+      m.last10 === DEMO_PHONE && String(otp).trim() === DEMO_TOKEN
 
-    if (!verify.data || verify.data.type !== "success") {
-      return res.status(401).json({ message: verify.data?.message || "Invalid OTP. Please try again." })
+    if (!isDemo) {
+      const verify = await axios.get("https://control.msg91.com/api/v5/otp/verify", {
+        params: { otp: String(otp).trim(), mobile: m.msg91 },
+        headers: { authkey: MSG91_AUTH_KEY },
+      })
+
+      if (!verify.data || verify.data.type !== "success") {
+        return res.status(401).json({ message: verify.data?.message || "Invalid OTP. Please try again." })
+      }
+    }
+
+    // ── role handling ───────────────────────────────────────────────────
+    // The OTP proves the phone. It does not prove the person runs a shop,
+    // a pharmacy or a bike. Without this check a customer who picked
+    // "Vendor" was silently signed in as a customer and dropped on the
+    // home page, with no explanation.
+    //
+    // Customer stays open to any number and auto-creates, exactly as
+    // before. Partner roles must already be registered and approved.
+    const want = String(role || "customer").toLowerCase()
+
+    if (want !== "customer") {
+      const elig = await checkEligibility(m.last10, want)
+      if (!elig.ok) {
+        return res.status(elig.code === "pending" ? 403 : 404).json({
+          message: elig.message,
+          notRegistered: elig.code === "not_registered" || elig.code === "wrong_role",
+          pending: elig.code === "pending",
+        })
+      }
+      const p = elig.user
+      const accessToken = jwt.sign(
+        { id: p.id, phone: p.phone, role: p.role || want, name: p.name },
+        JWT_SECRET, { expiresIn: "7d" })
+      const refreshToken = jwt.sign({ id: p.id }, JWT_SECRET, { expiresIn: "30d" })
+      return res.json({
+        success: true, accessToken, refreshToken,
+        user: { id: p.id, name: p.name, email: p.email, phone: p.phone, role: p.role || want },
+      })
     }
 
     // Find or create the customer
